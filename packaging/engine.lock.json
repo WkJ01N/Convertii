@@ -1,0 +1,8 @@
+{
+  "version": "8.0-full_build-www.gyan.dev",
+  "source": "https://github.com/FFmpeg/FFmpeg/commit/140fd653ae",
+  "provider": "https://www.gyan.dev/ffmpeg/builds/",
+  "license": "GPL-3.0-or-later (engine build; Convertii is GPL-3.0-only)",
+  "ffmpegSha256": "81B5832F6C548D64FEBA0EC7D643397E2351D9F3460A65C6C296956045EEBAEA",
+  "ffprobeSha256": "421DBC81A3D758DFE114534FF48EF47A61EF91896EB4B9E819609A8752AB8272"
+}

@@ -1,0 +1,4 @@
+LIBRARY ConvertiiShell
+EXPORTS
+    DllGetClassObject PRIVATE
+    DllCanUnloadNow PRIVATE

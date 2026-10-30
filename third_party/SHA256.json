@@ -1,0 +1,54 @@
+[
+  {
+    "Path": "third_party\\miniz\\LICENSE",
+    "Sha256": "0115478D567121238CF6CC1C0C361926CF07A49D9E4C9E66DA97FAC6A01646B3"
+  },
+  {
+    "Path": "third_party\\miniz\\miniz_common.h",
+    "Sha256": "F1BA29821C8CAEF83585B328196AA346C5DA7C82890A70A3D10D77C6CEC0ED39"
+  },
+  {
+    "Path": "third_party\\miniz\\miniz_export.h",
+    "Sha256": "195259DC89FB3F83A96426A90EE03DC45ACEF113150CD3475EA9CFBF1F7784F3"
+  },
+  {
+    "Path": "third_party\\miniz\\miniz_tdef.c",
+    "Sha256": "85B93205232D51D092F24041934D951F11F9EDC02DF1F475E8CEB7B281A1E7F6"
+  },
+  {
+    "Path": "third_party\\miniz\\miniz_tdef.h",
+    "Sha256": "D62DA02953C3834DFCBDE4DB026C6D9345013EF9B0E53185131016A3A4E48C33"
+  },
+  {
+    "Path": "third_party\\miniz\\miniz_tinfl.c",
+    "Sha256": "2296EBD21EF9AF5EBBEFD5B454D4BB67D8FB4AF2D24945E7FB32114374F75A76"
+  },
+  {
+    "Path": "third_party\\miniz\\miniz_tinfl.h",
+    "Sha256": "DA4850920FDF09F8877D9AFFABE1EBBA1852CE4B1EBBD121F2BA7A7EA8E57E5D"
+  },
+  {
+    "Path": "third_party\\miniz\\miniz_zip.c",
+    "Sha256": "B70E502C425E2A31146178C1466DCCAF1874390009950774BE2BE9BD4EC908A9"
+  },
+  {
+    "Path": "third_party\\miniz\\miniz_zip.h",
+    "Sha256": "B062A5DEF545445C73FD1D664E35A89165DFB0D996AB848F507244E819CFCF04"
+  },
+  {
+    "Path": "third_party\\miniz\\miniz.c",
+    "Sha256": "F23204EFEE2BFAFFB72A974D2E28C64C3C1D9787144B5C5890F129C465E467BD"
+  },
+  {
+    "Path": "third_party\\miniz\\miniz.h",
+    "Sha256": "F0B67217BDD8E45B74EB9B7C2C7AE20ED6760A1D76F3276B93617039EBD082DF"
+  },
+  {
+    "Path": "third_party\\nlohmann\\json.hpp",
+    "Sha256": "AAF127C04CB31C406E5B04A63F1AE89369FCCDE6D8FA7CDDA1ED4F32DFC5DE63"
+  },
+  {
+    "Path": "third_party\\nlohmann\\LICENSE.MIT",
+    "Sha256": "46A65CFFD1EA955132D95A8DD921640714A8D6B537D2E4E482D31145AE95B603"
+  }
+]

@@ -1,0 +1,2 @@
+#include <windows.h>
+1 RT_MANIFEST "@CMAKE_SOURCE_DIR@/native/setup/setup.manifest"

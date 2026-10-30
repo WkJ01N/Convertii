@@ -1,0 +1,3 @@
+# Sources, scripts and packaging files are stored with LF endings so a fresh clone
+# rebuilds byte-identical inputs on every machine.
+* text=auto eol=lf
