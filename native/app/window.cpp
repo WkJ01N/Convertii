@@ -355,7 +355,7 @@ void Window::command(int id) {
  }
  else if (id == Register) { bool modern = checked(ModernMenu); service([modern] { return register_shell(executable_dir(),modern); }); }
  else if (id == Unregister) service([] { unregister_shell(executable_dir()); return "Context menus removed."; });
- else if (id == Hardware) service([this] { auto result = detect_hardware(engine_); std::string message; for (auto& c : result) message += c.encoder + (c.available ? ": available\r\n" : ": unavailable\r\n"); return message; });
+ else if (id == Hardware) service([this] { auto result = detect_hardware(engine_, nullptr, true); std::string message; for (auto& c : result) message += c.encoder + (c.available ? ": available\r\n" : ": unavailable\r\n"); return message; });
 }
 void Window::rebuild_language() {
  int index=selected(); auto value = options(); stop_preview(); for (auto child = GetWindow(window_,GW_CHILD);child;) { auto next = GetWindow(child,GW_HWNDNEXT); DestroyWindow(child); child = next; }

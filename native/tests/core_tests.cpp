@@ -1,4 +1,5 @@
 #include <convertii/core.h>
+#include <algorithm>
 #include <iostream>
 #include <fstream>
 #include <cmath>
@@ -40,6 +41,12 @@ int main() {
   const unsigned char exif[]={0xff,0xe1,0,0x22,0x45,0x78,0x69,0x66,0,0,0x49,0x49,0x2a,0,8,0,0,0,1,0,0x12,1,3,0,1,0,0,0,6,0,0,0,0,0,0,0}; image_data.insert(2,reinterpret_cast<const char*>(exif),sizeof(exif)); write_text(root/L"oriented.jpg",image_data);
   auto oriented_options=options; oriented_options.image_format="png"; auto oriented=perform(L"oriented.jpg",oriented_options); check(oriented.state==State::Completed,"EXIF JPEG conversion"); auto oriented_info=probe(engine,oriented.outputs[0].path); check(oriented_info.width==96 && oriented_info.height==128,"EXIF orientation applied");
   SetEnvironmentVariableW(L"CONVERTII_TEST_FFMPEG",engine.ffmpeg.c_str()); auto fake_engine=engine; fake_engine.ffmpeg=executable_dir()/L"HardwareStub.exe"; auto hardware_options=options; hardware_options.target_mode=false; hardware_options.encoder="nvidia"; auto fallback=process(fake_engine,{{{root/L"中文 clip.mp4"}},hardware_options}); check(fallback.state==State::Completed && fallback.message.find("Hardware encoding failed")!=std::string::npos,"Hardware failure falls back to actual software encoding: "+fallback.message);
+  auto probe_log=root/L"probe.log"; fs::remove(probe_log); SetEnvironmentVariableW(L"CONVERTII_TEST_PROBE_LOG",probe_log.c_str());
+  auto counting=fake_engine; counting.ffmpeg=root/L"HardwareStub2.exe"; fs::copy_file(executable_dir()/L"HardwareStub.exe",counting.ffmpeg,fs::copy_options::overwrite_existing);
+  auto probes=[&] { std::ifstream log(probe_log); return static_cast<unsigned>(std::count(std::istreambuf_iterator<char>(log),std::istreambuf_iterator<char>(),'\n')); };
+  detect_hardware(counting); detect_hardware(counting); check(probes()==3,"Hardware probe cached per engine: "+std::to_string(probes()));
+  detect_hardware(counting,nullptr,true); check(probes()==6,"Explicit hardware refresh re-probes: "+std::to_string(probes()));
+  SetEnvironmentVariableW(L"CONVERTII_TEST_PROBE_LOG",nullptr);
   std::atomic_bool cancel{true}; check(process(engine,{{{root/L"silent.mp4"}},options},&cancel).state==State::Cancelled,"Pre-cancelled"); cancel=false;
   auto cancelled=process(engine,{{{root/L"中文 clip.mp4"}},options},&cancel,[&](auto& p) { if (p.message.starts_with("Encoding")) cancel=true; }); check(cancelled.state==State::Cancelled,"Cancellation during encoding");
   write_text(root/L"broken.mp4","broken"); check(perform(L"broken.mp4",options).state==State::Failed,"Corrupt input"); write_text(root/L"blocked","file"); auto blocked=options; blocked.output_directory=root/L"blocked"/L"folder"; check(perform(L"silent.mp4",blocked).state==State::Failed,"Blocked output directory");

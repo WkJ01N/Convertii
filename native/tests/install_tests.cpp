@@ -1,4 +1,6 @@
 #include <convertii/install.h>
+#include <algorithm>
+#include <cctype>
 #include <iostream>
 #include <miniz.h>
 using namespace cvt;
@@ -13,7 +15,7 @@ int wmain(int argc, wchar_t** argv) {
     if (!config) { FreeLibrary(module); throw Error("Installer release configuration missing."); }
     auto bytes=static_cast<const char*>(LockResource(LoadResource(module,config)));
     auto json=Json::parse(bytes,bytes+SizeofResource(module,config));
-    auto checksum=json.value("Sha256",""); std::transform(checksum.begin(),checksum.end(),checksum.begin(),toupper);
+    auto checksum=json.value("Sha256",""); std::transform(checksum.begin(),checksum.end(),checksum.begin(),[](unsigned char c) { return static_cast<char>(std::toupper(c)); });
     if (checksum!=expected) { FreeLibrary(module); throw Error("Installer checksum differs from portable ZIP."); }
     auto payload=FindResourceW(module,MAKEINTRESOURCEW(102),RT_RCDATA);
     if (i==4) {

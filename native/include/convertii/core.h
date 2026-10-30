@@ -54,7 +54,9 @@ Media probe(const Engine& engine, const fs::path& path, const std::atomic_bool* 
 Plan plan(const Media& media, const Options& options);
 Result process(const Engine& engine, const Request& request, const std::atomic_bool* cancel = nullptr, ProgressCallback progress = {});
 struct Capability { std::string encoder; bool available; std::string detail; };
-std::vector<Capability> detect_hardware(const Engine& engine, const std::atomic_bool* cancel = nullptr);
+// Probing costs one short FFmpeg run per hardware encoder, so the result is cached for the
+// lifetime of the process; pass refresh=true to re-probe (for example from a menu action).
+std::vector<Capability> detect_hardware(const Engine& engine, const std::atomic_bool* cancel = nullptr, bool refresh = false);
 std::string concat_incompatibility(const std::vector<Media>& media, const std::vector<Input>& inputs);
 double time_value(const std::string& text);
 std::string time_text(double seconds);
