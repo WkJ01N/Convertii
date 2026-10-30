@@ -27,7 +27,7 @@ constexpr int kMargin = 10;
 constexpr int kToolbarTop = 10;
 constexpr int kToolbarHeight = 28;
 constexpr int kListTop = 46;
-constexpr int kListHeight = 140;
+constexpr int kListHeight = 120;
 constexpr int kTabsTop = 196;
 constexpr int kPagePadding = 12;
 constexpr int kRowPitch = 28;
@@ -103,7 +103,7 @@ void Window::button(int page,int id,const wchar_t* label,int col,int row,int spa
 HWND Window::open(int show) {
  WNDCLASSEXW page_class{sizeof(page_class)}; page_class.lpfnWndProc = DefWindowProcW; page_class.hInstance = instance_; page_class.hCursor = LoadCursorW(nullptr,IDC_ARROW); page_class.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_BTNFACE+1); page_class.lpszClassName = L"ConvertiiPage"; RegisterClassExW(&page_class);
  WNDCLASSEXW cls{sizeof(cls)}; cls.lpfnWndProc = procedure; cls.hInstance = instance_; cls.hCursor = LoadCursorW(nullptr,IDC_ARROW); cls.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_BTNFACE+1); cls.lpszClassName = L"ConvertiiNativeWindow"; cls.hIcon = LoadIconW(nullptr,IDI_APPLICATION); RegisterClassExW(&cls);
- dpi_ = static_cast<int>(GetDpiForSystem()); RECT work; SystemParametersInfoW(SPI_GETWORKAREA,0,&work,0); int width = std::min(px(930),static_cast<int>(work.right-work.left)), height = std::min(px(780),static_cast<int>(work.bottom-work.top));
+ dpi_ = static_cast<int>(GetDpiForSystem()); RECT work; SystemParametersInfoW(SPI_GETWORKAREA,0,&work,0); int width = std::min(px(1100),static_cast<int>(work.right-work.left)), height = std::min(px(860),static_cast<int>(work.bottom-work.top));
  auto window = CreateWindowExW(WS_EX_CONTROLPARENT,cls.lpszClassName,L"Convertii",WS_OVERLAPPEDWINDOW,CW_USEDEFAULT,CW_USEDEFAULT,width,height,nullptr,nullptr,instance_,this); if (!window) throw Error(win_error());
  ShowWindow(window,show); UpdateWindow(window); return window;
 }
@@ -131,7 +131,7 @@ void Window::build() {
  field(0,Width,L"Max width",0,4,1,L"EDIT",{},L"0 = source"); field(0,Height,L"Max height",1,4,1,L"EDIT",{},L"0 = source");
  field(0,Fps,L"FPS",0,5,1,L"EDIT",{},L"0 = source"); field(0,VideoBitrate,L"Video kbps",1,5,1,L"EDIT",{},L"0 = auto");
  button(0,AllowSdr,L"Allow HDR to SDR",0,6,1,true); button(0,AllowAlpha,L"Allow JPEG alpha fill",1,6,1,true); field(0,Background,L"JPEG RGB background",0,7,1,L"EDIT",{},L"FFFFFF");
- auto preview = create(L"STATIC",L"",SS_BLACKRECT | WS_CLIPCHILDREN,pages_[1],Video,0,0,100,100); page_controls_[1].push_back({preview,0,0,1,0,190,false,true,0,0,0,0,true});
+ auto preview = create(L"STATIC",L"",SS_BLACKRECT | WS_CLIPCHILDREN,pages_[1],Video,0,0,100,100); page_controls_[1].push_back({preview,0,0,1,0,160,false,true,0,0,0,0,true});
  field(1,Start,L"Start time",1,0,1,L"EDIT",{},L"hh:mm:ss.ms"); field(1,End,L"End time",1,1,1,L"EDIT",{},L"blank = full"); field(1,Speed,L"Speed",1,2,1,L"EDIT",{},L"0.25 - 4");
  button(1,FastTrim,L"Fast keyframe trim",1,3,1,true);
  button(1,Play,L"Play",-1,6,1); button(1,MarkIn,L"Mark start",-1,6,1); button(1,MarkOut,L"Mark end",-1,6,1); button(1,PlayRange,L"Play selection",-1,6,1); button(1,EffectPreview,L"Effect preview",-1,6,1); button(1,Snapshot,L"Snapshot",-1,6,1);
@@ -141,7 +141,7 @@ void Window::build() {
  auto preview_status = create(L"STATIC",tr(L"Original playback"),0,pages_[1],PreviewStatus,0,0,100,24); page_controls_[1].push_back({preview_status,-1,9,1,0,0,false,true,0,0,0,0});
  field(1,CropX,L"Crop X",0,10); field(1,CropY,L"Crop Y",1,10); field(1,CropW,L"Crop width",0,11,1,L"EDIT",{},L"0 = off"); field(1,CropH,L"Crop height",1,11);
  field(1,Rotation,L"Rotation",0,12,1,L"COMBOBOX",{L"0",L"90",L"180",L"270"}); button(1,HFlip,L"Horizontal flip",1,12,1,true); button(1,VFlip,L"Vertical flip",0,13,1,true); button(1,Gray,L"Grayscale",1,13,1,true);
- button(1,Deinterlace,L"Deinterlace",0,14,1,true); button(1,Denoise,L"Denoise",1,14,1,true); button(1,Sharpen,L"Sharpen",0,15,1,true); button(1,Brightness,L"Brightness",1,15,1,true);
+ button(1,Deinterlace,L"Deinterlace",0,14,1,true); button(1,Denoise,L"Denoise",1,14,1,true); button(1,Sharpen,L"Sharpen",0,15,1,true); field(1,Brightness,L"Brightness",1,15,1,L"EDIT",{},L"-1 - 1");
  field(1,Contrast,L"Contrast",0,16,1,L"EDIT",{},L"0 - 3"); field(1,Saturation,L"Saturation",1,16,1,L"EDIT",{},L"0 - 3");
  field(2,AudioFormat,L"Audio format",0,0,1,L"COMBOBOX",{L"m4a",L"mp3",L"flac",L"wav"}); field(2,AudioBitrate,L"Audio kbps",1,0); field(2,SampleRate,L"Sample rate",0,1); field(2,Channels,L"Channels",1,1);
  field(2,Gain,L"Gain dB",0,2,1,L"EDIT",{},L"-60 - 60"); button(2,Mute,L"Mute",1,2,1,true); field(2,VideoTrack,L"Video track",0,3,1,L"COMBOBOX",{L"Auto"}); button(2,OnlyAudio,L"Export audio only",1,3,1,true);
@@ -156,7 +156,7 @@ void Window::build() {
  button(4,ConcatNormalize,L"Normalize / re-encode",0,0,2,true); button(4,ConcatConfirm,L"Confirm: one video and at most one audio, subtitles dropped",0,1,2,true);
  field(4,ClipStart,L"Clip start",0,2); field(4,ClipEnd,L"Clip end",1,2,1,L"EDIT",{},L"blank = full");
  button(4,ConcatTarget,L"Apply target size to normalized output",-1,3,1,true); button(4,ClipSave,L"Save clip range",-1,3,1);
- button(4,ConcatUp,L"Move up",-1,4,1); button(4,ConcatDown,L"Move down",-1,4,1); button(4,ConcatStart,L"Join files",-1,4,1,false,true);
+ button(4,ConcatUp,L"Move up",-1,4,1); button(4,ConcatDown,L"Move down",-1,4,1); button(4,ConcatStart,L"Join files",-1,4,1);
  field(5,Language,L"Language",0,0,1,L"COMBOBOX",{L"English",L"简体中文"}); button(5,ModernMenu,L"Windows 11 modern menu",0,1,2,true);
  field(5,Presets,L"Size presets",0,2,1,L"EDIT",{},L"Comma separated");
  button(5,Register,L"Register / repair menus",-1,3,1); button(5,Unregister,L"Remove menus",-1,3,1); button(5,Hardware,L"Test hardware",-1,3,1); button(5,SaveSettings,L"Save settings",-1,3,1);
@@ -251,7 +251,7 @@ void Window::layout_page(int index) {
  for (auto& c : page_controls_[index]) MoveWindow(c.window,px(c.x),px(c.y-scroll_[index]),px(c.w),px(c.h),TRUE);
  SCROLLINFO info{sizeof(info)}; info.fMask = SIF_RANGE | SIF_PAGE | SIF_POS; info.nMin = 0;
  info.nMax = max_scroll_[index]+std::max(1,height)-1; info.nPage = static_cast<UINT>(std::max(1,height)); info.nPos = scroll_[index];
- SetScrollInfo(pages_[index],SB_VERT,&info,TRUE);
+ SetScrollInfo(pages_[index],SB_VERT,&info,TRUE); ShowScrollBar(pages_[index],SB_VERT,max_scroll_[index] > 0);
 }
 
 void Window::change_tab() {
