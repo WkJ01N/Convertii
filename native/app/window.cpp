@@ -1,7 +1,9 @@
 #include "window.h"
+#include <cstdio>
 #include <shellapi.h>
 #include <commdlg.h>
 #include <shlobj.h>
+#include <windowsx.h>
 #include <mfmediaengine.h>
 #include <winrt/base.h>
 #include <sstream>
@@ -19,6 +21,24 @@ enum Id {
  Language=360, ModernMenu, Presets, Register, Unregister, Hardware, SaveSettings, Summary, AllProgress, Log, PreviewStatus
 };
 constexpr UINT UI_EVENT = WM_APP + 2;
+namespace {
+// Layout is expressed in logical pixels at 96 DPI and scaled with px().
+constexpr int kMargin = 10;
+constexpr int kToolbarTop = 10;
+constexpr int kToolbarHeight = 28;
+constexpr int kListTop = 46;
+constexpr int kListHeight = 140;
+constexpr int kTabsTop = 196;
+constexpr int kPagePadding = 12;
+constexpr int kRowPitch = 28;
+constexpr int kControlHeight = 22;
+constexpr int kLabelColumn = 122;
+constexpr int kLabelGap = 8;
+constexpr int kColumnGap = 24;
+constexpr int kButtonGap = 8;
+constexpr int kBottomBar = 52;
+constexpr int kOutputHeight = 30;
+}
 static void post(HWND window,std::unique_ptr<UiEvent> event) { if (PostMessageW(window,UI_EVENT,0,reinterpret_cast<LPARAM>(event.get()))) event.release(); }
 static std::wstring size_text(uint64_t bytes) { std::wostringstream out; out << std::fixed << std::setprecision(2) << bytes/1000000. << L" MB"; return out.str(); }
 static std::wstring decimal(double n) { std::wostringstream out; out.imbue(std::locale::classic()); out << std::setprecision(9) << n; return out.str(); }
@@ -42,15 +62,14 @@ std::wstring Window::tr(const wchar_t* value) const {
  {L"Compression / conversion",L"压缩 / 转换"},{L"Trim / picture",L"剪辑 / 画面"},{L"Audio",L"音频"},{L"Subtitles",L"字幕"},{L"Concatenation",L"拼接"},{L"Tasks / settings",L"任务 / 设置"},
  {L"Operation",L"操作"},{L"Compress",L"压缩大小"},{L"Convert",L"格式转换"},{L"Stream copy / remux",L"无重编码换封装"},{L"Size mode",L"大小模式"},{L"Target size",L"目标上限"},{L"Quality preset",L"质量预设"},{L"Target / file (MB)",L"每个文件上限 (MB)"},{L"Clear",L"清晰"},{L"Balanced",L"均衡"},{L"Small",L"小体积"},
  {L"Output type",L"输出类型"},{L"Video",L"视频"},{L"Image",L"图片"},{L"Video format",L"视频格式"},{L"Image format",L"图片格式"},{L"Audio format",L"音频格式"},{L"Encoder",L"编码器"},{L"Auto",L"自动检测"},{L"Software",L"软件编码"},{L"Max width (0 = source)",L"最大宽度（0 = 原始）"},{L"Max height (0 = source)",L"最大高度（0 = 原始）"},{L"FPS (0 = source)",L"帧率（0 = 原始）"},{L"Video kbps (0 = auto)",L"视频 kbps（0 = 自动）"},
- {L"Allow HDR to SDR",L"确认 HDR 转为 SDR"},{L"Allow JPEG alpha fill",L"确认 JPEG 背景填充"},{L"JPEG RGB background",L"JPEG 背景色 (RGB)"},{L"Start (hh:mm:ss.ms)",L"开始 (时:分:秒.毫秒)"},{L"End (blank = full)",L"结束（空白 = 完整）"},{L"Speed (0.25 - 4)",L"速度（0.25～4）"},{L"Crop X",L"裁剪 X"},{L"Crop Y",L"裁剪 Y"},{L"Crop width (0 = off)",L"裁剪宽度（0 = 关闭）"},{L"Crop height",L"裁剪高度"},{L"Rotation",L"旋转"},{L"Horizontal flip",L"水平翻转"},{L"Vertical flip",L"垂直翻转"},{L"Grayscale",L"灰度"},{L"Deinterlace",L"去隔行"},{L"Denoise",L"降噪"},{L"Sharpen",L"锐化"},{L"Brightness (-1 - 1)",L"亮度（-1～1）"},{L"Contrast (0 - 3)",L"对比度（0～3）"},{L"Saturation (0 - 3)",L"饱和度（0～3）"},
+ {L"Allow HDR to SDR",L"确认 HDR 转为 SDR"},{L"Allow JPEG alpha fill",L"确认 JPEG 背景填充"},{L"Start (hh:mm:ss.ms)",L"开始 (时:分:秒.毫秒)"},{L"End (blank = full)",L"结束（空白 = 完整）"},{L"Speed (0.25 - 4)",L"速度（0.25～4）"},{L"Crop X",L"裁剪 X"},{L"Crop Y",L"裁剪 Y"},{L"Crop width (0 = off)",L"裁剪宽度（0 = 关闭）"},{L"Crop height",L"裁剪高度"},{L"Rotation",L"旋转"},{L"Horizontal flip",L"水平翻转"},{L"Vertical flip",L"垂直翻转"},{L"Grayscale",L"灰度"},{L"Deinterlace",L"去隔行"},{L"Denoise",L"降噪"},{L"Sharpen",L"锐化"},{L"Brightness (-1 - 1)",L"亮度（-1～1）"},{L"Contrast (0 - 3)",L"对比度（0～3）"},{L"Saturation (0 - 3)",L"饱和度（0～3）"},
  {L"Fast keyframe trim (time may differ)",L"快速关键帧截取（时间可能偏移）"},{L"Snapshot",L"当前位置截图"},{L"Play / pause",L"播放 / 暂停"},{L"Mark start",L"标记起点"},{L"Mark end",L"标记终点"},{L"Play selection",L"播放选区"},{L"Effect preview (10 s)",L"效果预览（10 秒）"},{L"Audio kbps",L"音频 kbps"},{L"Sample rate",L"采样率"},{L"Channels",L"声道"},{L"Gain dB (-60 - 60)",L"增益 dB（-60～60）"},{L"Mute",L"移除音频"},{L"Export audio only",L"仅导出音频"},{L"Video track",L"主视频轨"},
  {L"Subtitle action",L"字幕操作"},{L"None",L"无"},{L"Mux selected",L"封装选中字幕"},{L"Burn one",L"烧录一条字幕"},{L"Extract selected",L"提取选中字幕"},{L"External SRT / ASS",L"外部 SRT / ASS"},{L"Use external file",L"使用外部字幕"},{L"Offset seconds (+ = later)",L"偏移秒数（正数 = 延后）"},{L"Extract format",L"提取格式"},{L"Burn subtitle track",L"烧录字幕轨"},{L"Allow subtitle style loss",L"确认字幕转换可能丢失样式"},{L"Extract subtitles",L"提取字幕"},
- {L"Normalize / re-encode",L"统一参数后转码拼接"},{L"Confirm: one video + at most one audio; omit subtitles",L"确认：只合并一路视频及至多一路音频，省略字幕"},{L"Move up",L"上移"},{L"Move down",L"下移"},{L"Join files",L"开始拼接"},{L"Clip start",L"片段开始"},{L"Clip end (blank = full)",L"片段结束（空白 = 完整）"},{L"Save clip range",L"保存片段范围"},
+ {L"Normalize / re-encode",L"统一参数后转码拼接"},{L"Confirm: one video and at most one audio, subtitles dropped",L"确认：只合并一路视频及至多一路音频，省略字幕"},{L"Move up",L"上移"},{L"Move down",L"下移"},{L"Join files",L"开始拼接"},{L"Clip start",L"片段开始"},{L"Clip end (blank = full)",L"片段结束（空白 = 完整）"},{L"Save clip range",L"保存片段范围"},
  {L"Language",L"语言"},{L"Windows 11 modern menu",L"启用 Windows 11 新右键菜单"},{L"Size presets (comma-separated MB)",L"大小预设（逗号分隔，MB）"},{L"Register / repair menus",L"注册 / 修复右键"},{L"Remove menus",L"移除右键"},{L"Test hardware",L"检测硬件"},{L"Save settings",L"保存设置"},{L"File",L"文件"},{L"Size",L"大小"},{L"Progress",L"进度"},{L"Status",L"状态"},{L"Output",L"输出"},{L"Queued",L"等待处理"},{L"Probing",L"正在分析"},{L"Running",L"处理中"},{L"Confirmation",L"需要确认"},{L"Completed",L"已完成"},{L"Failed",L"失败"},{L"Cancelled",L"已取消"},{L"Ready",L"就绪"},{L"Original playback",L"原片播放"},{L"Proxy playback",L"代理片段播放"},{L"Effect preview",L"效果样片预览"},
- {L"1 MB = 1,000,000 bytes. Strict size uses software two-pass. Quality presets do not guarantee size.",L"1 MB = 1,000,000 字节；严格大小使用软件两遍编码；质量预设不保证大小。"},
- {L"Quick concat requires matching codecs/time bases. Normalized concat preserves aspect ratio with black bars.",L"快速拼接要求编码及时间基一致；统一转码保持比例并补黑边。"},
- {L"Only text subtitles are supported. Select tracks below; external ASS keeps styles when burned.",L"仅支持文本字幕。可选择下方轨道；ASS 烧录保留样式。"},
- {L"Source time",L"源时间"},{L"Details",L"详情"}
+ {L"Source time",L"源时间"},{L"Details",L"详情"},
+  {L"Convert format",L"格式转换"},{L"Picture",L"画面"},{L"Concat",L"拼接"},{L"Convert",L"转换"},{L"Save override",L"保存单独设置"},{L"File limit",L"单文件上限"},{L"Start time",L"开始时间"},{L"End time",L"结束时间"},{L"Speed",L"速度"},{L"Max width",L"最大宽度"},{L"Max height",L"最大高度"},{L"FPS",L"帧率"},{L"Video kbps",L"视频码率"},{L"Crop width",L"裁剪宽度"},{L"Brightness",L"亮度"},{L"Contrast",L"对比度"},{L"Saturation",L"饱和度"},{L"Gain dB",L"增益"},{L"Offset seconds",L"偏移秒数"},{L"Fast keyframe trim",L"快速关键帧截取"},{L"Play",L"播放"},{L"Effect preview",L"效果样片预览"},{L"JPEG RGB background",L"背景色"},{L"Size presets",L"大小预设"},{L"Clip end",L"片段结束"},{L"Apply target size to normalized output",L"对统一转码结果应用目标大小上限"},
+  {L"0 = source",L"0 = 原始"},{L"0 = auto",L"0 = 自动"},{L"blank = full",L"留空 = 完整"},{L"0.25 - 4",L"0.25～4"},{L"-60 - 60",L"-60～60"},{L"-1 - 1",L"-1～1"},{L"0 - 3",L"0～3"},{L"0 = off",L"0 = 关闭"},{L"+ = later",L"正数 = 延后"},{L"Beside each source",L"留空则放在源文件旁"},{L"Subtitle file",L"字幕文件"},{L"hh:mm:ss.ms",L"时:分:秒.毫秒"},{L"Comma separated",L"逗号分隔"}
  }; auto it = dictionary.find(value); return it == dictionary.end() ? value : it->second;
 }
 HWND Window::create(const wchar_t* type,const std::wstring& title,DWORD style,HWND parent,int id,int x,int y,int w,int h,DWORD ex) {
@@ -58,92 +77,183 @@ HWND Window::create(const wchar_t* type,const std::wstring& title,DWORD style,HW
  if (!window) throw Error(win_error()); SendMessageW(window,WM_SETFONT,reinterpret_cast<WPARAM>(font_),TRUE); if (id) controls_[id] = window;
  if (style & WS_TABSTOP) SetWindowSubclass(window,focus_procedure,2,reinterpret_cast<DWORD_PTR>(this)); return window;
 }
-void Window::field(int page,int id,const wchar_t* label,int x,int y,int width,const wchar_t* type,const std::vector<std::wstring>& entries) {
- auto title = create(L"STATIC",tr(label),0,pages_[page],0,x,y+4,178,24); page_controls_[page].push_back({title,x,y+4,178,24});
- bool presets=wcscmp(type,L"PRESETS")==0; DWORD style = WS_TABSTOP; bool combo = presets || wcscmp(type,L"COMBOBOX") == 0; if (combo) style |= (presets ? CBS_DROPDOWN | CBS_AUTOHSCROLL : CBS_DROPDOWNLIST) | WS_VSCROLL; else style |= ES_AUTOHSCROLL | WS_BORDER;
- auto edit = create(presets ? L"COMBOBOX" : type,L"",style,pages_[page],id,x+182,y,width,combo ? 260 : 24); page_controls_[page].push_back({edit,x+182,y,width,24});
+int Window::measure(const std::wstring& value,HFONT font) const {
+ HDC dc = GetDC(window_); auto previous = SelectObject(dc,font ? font : font_); SIZE size{}; GetTextExtentPoint32W(dc,value.c_str(),static_cast<int>(value.size()),&size); SelectObject(dc,previous); ReleaseDC(window_,dc);
+ return MulDiv(static_cast<int>(size.cx),96,dpi_);
+}
+HWND Window::make_button(HWND parent,int id,const wchar_t* label,bool checkbox,bool primary) {
+ auto title = tr(label); auto style = WS_TABSTOP | (checkbox ? BS_AUTOCHECKBOX : primary ? BS_DEFPUSHBUTTON : BS_PUSHBUTTON);
+ auto window = create(L"BUTTON",title,style,parent,id,0,0,120,kControlHeight);
+ widths_[id] = std::max(checkbox ? 0 : 80,measure(title,font_)+(checkbox ? 32 : 26)); labels_[id] = label; return window;
+}
+void Window::field(int page,int id,const wchar_t* label,int col,int row,int span,const wchar_t* type,const std::vector<std::wstring>& entries,const wchar_t* cue) {
+ auto title = create(L"STATIC",tr(label),0,pages_[page],0,0,0,100,kControlHeight); page_controls_[page].push_back({title,col,row,1,0,0,true,true});
+ bool presets = wcscmp(type,L"PRESETS") == 0; bool combo = presets || wcscmp(type,L"COMBOBOX") == 0; DWORD style = WS_TABSTOP;
+ if (combo) style |= (presets ? CBS_DROPDOWN | CBS_AUTOHSCROLL : CBS_DROPDOWNLIST) | WS_VSCROLL; else style |= ES_AUTOHSCROLL | WS_BORDER;
+ auto edit = create(presets ? L"COMBOBOX" : type,L"",style,pages_[page],id,0,0,160,combo ? 220 : kControlHeight);
  labels_[id] = label;
  for (auto& entry : entries) SendMessageW(edit,CB_ADDSTRING,0,reinterpret_cast<LPARAM>(tr(entry.c_str()).c_str())); if (combo) SendMessageW(edit,CB_SETCURSEL,0,0);
- if(presets) { std::istringstream stream(settings_.presets); std::string value; while(std::getline(stream,value,',')) SendMessageW(edit,CB_ADDSTRING,0,reinterpret_cast<LPARAM>(wide(value).c_str())); }
+ if (presets) { std::istringstream stream(settings_.presets); std::string value; while (std::getline(stream,value,',')) SendMessageW(edit,CB_ADDSTRING,0,reinterpret_cast<LPARAM>(wide(value).c_str())); }
+ page_controls_[page].push_back({edit,col,row,span,0,0,false,true});
+ if (!combo && cue) { auto hint = tr(cue); SendMessageW(edit,EM_SETCUEBANNER,TRUE,reinterpret_cast<LPARAM>(hint.c_str())); }
 }
-void Window::button(int page,int id,const wchar_t* label,int x,int y,int width,bool checkbox) {
- auto window = create(L"BUTTON",tr(label),WS_TABSTOP | (checkbox ? BS_AUTOCHECKBOX : BS_PUSHBUTTON),pages_[page],id,x,y,width,26);
- page_controls_[page].push_back({window,x,y,width,26}); labels_[id] = label;
+void Window::button(int page,int id,const wchar_t* label,int col,int row,int span,bool checkbox,bool primary) {
+ auto window = make_button(pages_[page],id,label,checkbox,primary); page_controls_[page].push_back({window,col,row,span,widths_[id],0,false,true,0,0,0,0});
 }
 HWND Window::open(int show) {
+ WNDCLASSEXW page_class{sizeof(page_class)}; page_class.lpfnWndProc = DefWindowProcW; page_class.hInstance = instance_; page_class.hCursor = LoadCursorW(nullptr,IDC_ARROW); page_class.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_BTNFACE+1); page_class.lpszClassName = L"ConvertiiPage"; RegisterClassExW(&page_class);
  WNDCLASSEXW cls{sizeof(cls)}; cls.lpfnWndProc = procedure; cls.hInstance = instance_; cls.hCursor = LoadCursorW(nullptr,IDC_ARROW); cls.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_BTNFACE+1); cls.lpszClassName = L"ConvertiiNativeWindow"; cls.hIcon = LoadIconW(nullptr,IDI_APPLICATION); RegisterClassExW(&cls);
  dpi_ = static_cast<int>(GetDpiForSystem()); RECT work; SystemParametersInfoW(SPI_GETWORKAREA,0,&work,0); int width = std::min(px(930),static_cast<int>(work.right-work.left)), height = std::min(px(780),static_cast<int>(work.bottom-work.top));
  auto window = CreateWindowExW(WS_EX_CONTROLPARENT,cls.lpszClassName,L"Convertii",WS_OVERLAPPEDWINDOW,CW_USEDEFAULT,CW_USEDEFAULT,width,height,nullptr,nullptr,instance_,this); if (!window) throw Error(win_error());
  ShowWindow(window,show); UpdateWindow(window); return window;
 }
 void Window::build() {
- NONCLIENTMETRICSW metrics{sizeof(metrics)}; SystemParametersInfoForDpi(SPI_GETNONCLIENTMETRICS,sizeof(metrics),&metrics,0,dpi_); font_ = CreateFontIndirectW(&metrics.lfMessageFont);
- create(L"BUTTON",tr(L"Add files"),WS_TABSTOP,window_,Add,10,8,90,26); create(L"BUTTON",tr(L"Remove"),WS_TABSTOP,window_,Remove,106,8,65,26); create(L"BUTTON",tr(L"Clear finished"),WS_TABSTOP,window_,Clear,177,8,105,26);
- create(L"BUTTON",tr(L"Per-file settings"),WS_TABSTOP,window_,Edit,288,8,135,26); create(L"BUTTON",tr(L"Use batch settings"),WS_TABSTOP,window_,Reset,429,8,125,26); create(L"BUTTON",tr(L"Open output"),WS_TABSTOP,window_,Open,560,8,90,26); create(L"BUTTON",tr(L"Settings"),WS_TABSTOP,window_,SettingsButton,656,8,80,26);
- list_ = create(WC_LISTVIEWW,L"",WS_TABSTOP | LVS_REPORT | LVS_SINGLESEL | LVS_SHOWSELALWAYS,window_,0,10,40,890,128,WS_EX_CLIENTEDGE); ListView_SetExtendedListViewStyle(list_,LVS_EX_FULLROWSELECT | LVS_EX_DOUBLEBUFFER);
- const wchar_t* columns[] = {L"File",L"Size",L"Progress",L"Status",L"Output"}; int widths[] = {410,100,80,130,120};
- for (int i=0;i<5;++i) { auto title = tr(columns[i]); LVCOLUMNW column{}; column.mask = LVCF_TEXT | LVCF_WIDTH; column.pszText = title.data(); column.cx = px(widths[i]); ListView_InsertColumn(list_,i,&column); }
- tabs_ = create(WC_TABCONTROLW,L"",WS_TABSTOP | WS_CLIPSIBLINGS,window_,0,10,176,890,490);
- const wchar_t* tab_names[] = {L"Compression / conversion",L"Trim / picture",L"Audio",L"Subtitles",L"Concatenation",L"Tasks / settings"};
- for (int i=0;i<6;++i) { auto title = tr(tab_names[i]); TCITEMW item{}; item.mask = TCIF_TEXT; item.pszText = title.data(); TabCtrl_InsertItem(tabs_,i,&item);
-  pages_[i] = create(L"STATIC",L"",WS_VSCROLL | WS_HSCROLL | WS_CLIPCHILDREN | WS_CLIPSIBLINGS,window_,0,14,205,880,450,WS_EX_CONTROLPARENT); SetWindowSubclass(pages_[i],page_procedure,1,reinterpret_cast<DWORD_PTR>(this)); }
- field(0,Operation,L"Operation",12,12,190,L"COMBOBOX",{L"Compress",L"Convert",L"Stream copy / remux"}); field(0,OutputKind,L"Output type",440,12,160,L"COMBOBOX",{L"Video",L"Image",L"Audio"});
- field(0,Mode,L"Size mode",12,48,190,L"COMBOBOX",{L"Target size",L"Quality preset"}); field(0,Target,L"Target / file (MB)",440,48,160,L"PRESETS");
- field(0,Quality,L"Quality preset",12,84,190,L"COMBOBOX",{L"Clear",L"Balanced",L"Small"}); field(0,Encoder,L"Encoder",440,84,160,L"COMBOBOX",{L"Auto",L"Software",L"NVIDIA",L"Intel",L"AMD"});
- field(0,VideoFormat,L"Video format",12,120,190,L"COMBOBOX",{L"mp4",L"mkv",L"webm"}); field(0,ImageFormat,L"Image format",440,120,160,L"COMBOBOX",{L"jpeg",L"png",L"webp"});
- field(0,Width,L"Max width (0 = source)",12,156,190); field(0,Height,L"Max height (0 = source)",440,156);
- field(0,Fps,L"FPS (0 = source)",12,192,190); field(0,VideoBitrate,L"Video kbps (0 = auto)",440,192);
- button(0,AllowSdr,L"Allow HDR to SDR",12,232,300,true); button(0,AllowAlpha,L"Allow JPEG alpha fill",440,232,300,true); field(0,Background,L"JPEG RGB background",12,270,190);
- auto hint = create(L"STATIC",tr(L"1 MB = 1,000,000 bytes. Strict size uses software two-pass. Quality presets do not guarantee size."),0,pages_[0],0,12,315,800,40); page_controls_[0].push_back({hint,12,315,800,40});
- auto video = create(L"STATIC",L"",SS_BLACKRECT | WS_CLIPCHILDREN,pages_[1],Video,12,12,380,190); page_controls_[1].push_back({video,12,12,380,190});
- field(1,Start,L"Start (hh:mm:ss.ms)",420,12,170); field(1,End,L"End (blank = full)",420,48,170); field(1,Speed,L"Speed (0.25 - 4)",420,84,170);
- button(1,FastTrim,L"Fast keyframe trim (time may differ)",420,124,380,true); button(1,Snapshot,L"Snapshot",420,166,165);
- button(1,Play,L"Play / pause",12,212,105); button(1,MarkIn,L"Mark start",123,212,90); button(1,MarkOut,L"Mark end",219,212,90); button(1,PlayRange,L"Play selection",315,212,120); button(1,EffectPreview,L"Effect preview (10 s)",441,212,190);
- auto slider = create(TRACKBAR_CLASSW,L"",WS_TABSTOP | TBS_HORZ | TBS_ENABLESELRANGE,pages_[1],Timeline,12,248,620,30); SendMessageW(slider,TBM_SETRANGEMAX,TRUE,100000); page_controls_[1].push_back({slider,12,248,620,30});
- auto clock = create(L"STATIC",L"00:00:00.000",0,pages_[1],Clock,640,254,200,25); page_controls_[1].push_back({clock,640,254,200,25});
- auto preview_status = create(L"STATIC",tr(L"Original playback"),0,pages_[1],PreviewStatus,12,284,800,28); page_controls_[1].push_back({preview_status,12,284,800,28});
- field(1,CropX,L"Crop X",12,322); field(1,CropY,L"Crop Y",440,322); field(1,CropW,L"Crop width (0 = off)",12,358); field(1,CropH,L"Crop height",440,358);
- field(1,Rotation,L"Rotation",12,394,160,L"COMBOBOX",{L"0",L"90",L"180",L"270"}); button(1,HFlip,L"Horizontal flip",440,394,160,true); button(1,VFlip,L"Vertical flip",620,394,150,true);
- button(1,Gray,L"Grayscale",12,434,160,true); button(1,Deinterlace,L"Deinterlace",200,434,170,true); button(1,Denoise,L"Denoise",440,434,140,true); button(1,Sharpen,L"Sharpen",620,434,150,true);
- field(1,Brightness,L"Brightness (-1 - 1)",12,474); field(1,Contrast,L"Contrast (0 - 3)",440,474); field(1,Saturation,L"Saturation (0 - 3)",12,510);
- field(2,AudioFormat,L"Audio format",12,12,160,L"COMBOBOX",{L"m4a",L"mp3",L"flac",L"wav"}); field(2,AudioBitrate,L"Audio kbps",440,12); field(2,SampleRate,L"Sample rate",12,48); field(2,Channels,L"Channels",440,48); field(2,Gain,L"Gain dB (-60 - 60)",12,84);
- button(2,Mute,L"Mute",440,84,150,true); button(2,OnlyAudio,L"Export audio only",620,84,170,true); field(2,VideoTrack,L"Video track",12,124,540,L"COMBOBOX",{L"Auto"});
- auto audio = create(WC_LISTVIEWW,L"",WS_TABSTOP | LVS_REPORT,pages_[2],AudioTracks,12,166,790,190,WS_EX_CLIENTEDGE); ListView_SetExtendedListViewStyle(audio,LVS_EX_FULLROWSELECT | LVS_EX_CHECKBOXES); page_controls_[2].push_back({audio,12,166,790,190});
- LVCOLUMNW track_column{}; track_column.mask = LVCF_WIDTH | LVCF_TEXT; track_column.cx = px(760); auto audio_title = tr(L"Audio"); track_column.pszText = audio_title.data(); ListView_InsertColumn(audio,0,&track_column);
- field(3,SubtitleMode,L"Subtitle action",12,12,190,L"COMBOBOX",{L"None",L"Mux selected",L"Burn one",L"Extract selected"}); field(3,SubtitleFormat,L"Extract format",440,12,160,L"COMBOBOX",{L"srt",L"ass"});
- field(3,SubtitleExternal,L"External SRT / ASS",12,48,460); button(3,SubtitleBrowse,L"Browse",670,48,120); button(3,SubtitleUseExternal,L"Use external file",12,84,300,true); button(3,AllowStyleLoss,L"Allow subtitle style loss",440,84,320,true);
- field(3,SubtitleOffset,L"Offset seconds (+ = later)",12,120); field(3,BurnTrack,L"Burn subtitle track",440,120,160,L"COMBOBOX",{L"Auto"});
- auto sublist = create(WC_LISTVIEWW,L"",WS_TABSTOP | LVS_REPORT,pages_[3],SubtitleTracks,12,164,790,170,WS_EX_CLIENTEDGE); ListView_SetExtendedListViewStyle(sublist,LVS_EX_FULLROWSELECT | LVS_EX_CHECKBOXES); page_controls_[3].push_back({sublist,12,164,790,170}); auto subtitle_title = tr(L"Subtitles"); track_column.pszText = subtitle_title.data(); ListView_InsertColumn(sublist,0,&track_column);
- button(3,Extract,L"Extract subtitles",12,346,170); auto subtitle_hint = create(L"STATIC",tr(L"Only text subtitles are supported. Select tracks below; external ASS keeps styles when burned."),0,pages_[3],0,12,382,790,40); page_controls_[3].push_back({subtitle_hint,12,382,790,40});
- button(4,ConcatNormalize,L"Normalize / re-encode",12,12,360,true); button(4,ConcatConfirm,L"Confirm: one video + at most one audio; omit subtitles",12,48,800,true);
- button(4,ConcatUp,L"Move up",12,94); button(4,ConcatDown,L"Move down",130,94); field(4,ClipStart,L"Clip start",12,140); field(4,ClipEnd,L"Clip end (blank = full)",440,140); button(4,ClipSave,L"Save clip range",12,184,160); button(4,ConcatTarget,settings_.chinese ? L"对统一转码结果应用目标大小上限" : L"Apply target size to normalized output",220,184,540,true); button(4,ConcatStart,L"Join files",12,236,160);
- auto concat_hint = create(L"STATIC",tr(L"Quick concat requires matching codecs/time bases. Normalized concat preserves aspect ratio with black bars."),0,pages_[4],0,12,286,790,50); page_controls_[4].push_back({concat_hint,12,286,790,50});
- field(5,Language,L"Language",12,12,190,L"COMBOBOX",{L"English",L"简体中文"}); button(5,ModernMenu,L"Windows 11 modern menu",440,12,350,true);
- field(5,Presets,L"Size presets (comma-separated MB)",12,52,570); button(5,Register,L"Register / repair menus",12,94,200); button(5,Unregister,L"Remove menus",220,94,140); button(5,Hardware,L"Test hardware",368,94,140); button(5,SaveSettings,L"Save settings",516,94,140);
- auto log = create(L"EDIT",L"",WS_BORDER | WS_VSCROLL | ES_MULTILINE | ES_AUTOVSCROLL | ES_READONLY,pages_[5],Log,12,140,790,240); page_controls_[5].push_back({log,12,140,790,240});
- create(L"STATIC",tr(L"Output folder (blank = beside each source)"),0,window_,Summary,10,680,600,20); output_ = create(L"EDIT",L"",WS_TABSTOP | WS_BORDER | ES_AUTOHSCROLL,window_,Output,10,704,710,24); create(L"BUTTON",tr(L"Browse"),WS_TABSTOP,window_,Browse,730,704,95,24);
- status_ = create(L"STATIC",tr(L"Ready"),0,window_,0,10,740,300,24); create(PROGRESS_CLASSW,L"",0,window_,AllProgress,10,766,250,8); SendMessageW(control(AllProgress),PBM_SETRANGE32,0,1000);
- create(L"BUTTON",tr(L"Retry failed"),WS_TABSTOP,window_,Retry,510,740,120,28); create(L"BUTTON",tr(L"Cancel"),WS_TABSTOP,window_,Cancel,636,740,110,28); create(L"BUTTON",tr(L"Start"),WS_TABSTOP | BS_DEFPUSHBUTTON,window_,Run,752,740,130,28);
+ NONCLIENTMETRICSW metrics{sizeof(metrics)}; SystemParametersInfoForDpi(SPI_GETNONCLIENTMETRICS,sizeof(metrics),&metrics,0,dpi_);
+ font_ = CreateFontIndirectW(&metrics.lfMessageFont);
+ HDC device = GetDC(window_); TEXTMETRICW metrics_text{}; auto previous = SelectObject(device,font_); GetTextMetricsW(device,&metrics_text); SelectObject(device,previous); ReleaseDC(window_,device);
+ label_height_ = MulDiv(static_cast<int>(metrics_text.tmHeight),96,dpi_); label_offset_ = (kControlHeight-label_height_)/2;
+ make_button(window_,Add,L"Add files"); make_button(window_,Remove,L"Remove"); make_button(window_,Clear,L"Clear finished"); make_button(window_,Edit,L"Per-file settings");
+ make_button(window_,Reset,L"Use batch settings"); make_button(window_,Open,L"Open output"); make_button(window_,SettingsButton,L"Settings");
+ list_ = create(WC_LISTVIEWW,L"",WS_TABSTOP | LVS_REPORT | LVS_SINGLESEL | LVS_SHOWSELALWAYS,window_,0,0,0,200,kListHeight,WS_EX_CLIENTEDGE);
+ ListView_SetExtendedListViewStyle(list_,LVS_EX_FULLROWSELECT | LVS_EX_DOUBLEBUFFER);
+ const wchar_t* columns[] = {L"File",L"Size",L"Progress",L"Status",L"Output"};
+ for (int i=0;i<5;++i) { auto title = tr(columns[i]); LVCOLUMNW column{}; column.mask = LVCF_TEXT | LVCF_WIDTH; column.pszText = title.data(); column.cx = px(120); ListView_InsertColumn(list_,i,&column); }
+ tabs_ = create(WC_TABCONTROLW,L"",WS_TABSTOP | WS_CLIPSIBLINGS,window_,0,0,0,200,200);
+ const wchar_t* tab_names[] = {L"Convert",L"Picture",L"Audio",L"Subtitles",L"Concat",L"Settings"};
+ for (int i=0;i<6;++i) {
+  auto title = tr(tab_names[i]); TCITEMW item{}; item.mask = TCIF_TEXT; item.pszText = title.data(); TabCtrl_InsertItem(tabs_,i,&item);
+  pages_[i] = create(L"ConvertiiPage",L"",WS_CLIPCHILDREN | WS_CLIPSIBLINGS | WS_VSCROLL,window_,0,0,0,200,200,WS_EX_CONTROLPARENT); SetWindowSubclass(pages_[i],page_procedure,1,reinterpret_cast<DWORD_PTR>(this));
+ }
+ field(0,Operation,L"Operation",0,0,1,L"COMBOBOX",{L"Compress",L"Convert format",L"Stream copy / remux"}); field(0,OutputKind,L"Output type",1,0,1,L"COMBOBOX",{L"Video",L"Image",L"Audio"});
+ field(0,Mode,L"Size mode",0,1,1,L"COMBOBOX",{L"Target size",L"Quality preset"}); field(0,Target,L"File limit",1,1,1,L"PRESETS");
+ field(0,Quality,L"Quality preset",0,2,1,L"COMBOBOX",{L"Clear",L"Balanced",L"Small"}); field(0,Encoder,L"Encoder",1,2,1,L"COMBOBOX",{L"Auto",L"Software",L"NVIDIA",L"Intel",L"AMD"});
+ field(0,VideoFormat,L"Video format",0,3,1,L"COMBOBOX",{L"mp4",L"mkv",L"webm"}); field(0,ImageFormat,L"Image format",1,3,1,L"COMBOBOX",{L"jpeg",L"png",L"webp"});
+ field(0,Width,L"Max width",0,4,1,L"EDIT",{},L"0 = source"); field(0,Height,L"Max height",1,4,1,L"EDIT",{},L"0 = source");
+ field(0,Fps,L"FPS",0,5,1,L"EDIT",{},L"0 = source"); field(0,VideoBitrate,L"Video kbps",1,5,1,L"EDIT",{},L"0 = auto");
+ button(0,AllowSdr,L"Allow HDR to SDR",0,6,1,true); button(0,AllowAlpha,L"Allow JPEG alpha fill",1,6,1,true); field(0,Background,L"JPEG RGB background",0,7,1,L"EDIT",{},L"FFFFFF");
+ auto preview = create(L"STATIC",L"",SS_BLACKRECT | WS_CLIPCHILDREN,pages_[1],Video,0,0,100,100); page_controls_[1].push_back({preview,0,0,1,0,190,false,true,0,0,0,0,true});
+ field(1,Start,L"Start time",1,0,1,L"EDIT",{},L"hh:mm:ss.ms"); field(1,End,L"End time",1,1,1,L"EDIT",{},L"blank = full"); field(1,Speed,L"Speed",1,2,1,L"EDIT",{},L"0.25 - 4");
+ button(1,FastTrim,L"Fast keyframe trim",1,3,1,true);
+ button(1,Play,L"Play",-1,6,1); button(1,MarkIn,L"Mark start",-1,6,1); button(1,MarkOut,L"Mark end",-1,6,1); button(1,PlayRange,L"Play selection",-1,6,1); button(1,EffectPreview,L"Effect preview",-1,6,1); button(1,Snapshot,L"Snapshot",-1,6,1);
+ for (auto& c : page_controls_[1]) if (c.row == 6 && c.col < 0) c.flush = true;
+ auto slider = create(TRACKBAR_CLASSW,L"",WS_TABSTOP | TBS_HORZ | TBS_ENABLESELRANGE,pages_[1],Timeline,0,0,200,30); SendMessageW(slider,TBM_SETRANGEMAX,TRUE,100000); page_controls_[1].push_back({slider,-1,8,1,-146,0,false,true,0,0,0,0});
+ auto clock = create(L"STATIC",L"00:00:00.000",0,pages_[1],Clock,0,0,130,24); page_controls_[1].push_back({clock,-1,8,1,130,0,false,true,0,0,0,0});
+ auto preview_status = create(L"STATIC",tr(L"Original playback"),0,pages_[1],PreviewStatus,0,0,100,24); page_controls_[1].push_back({preview_status,-1,9,1,0,0,false,true,0,0,0,0});
+ field(1,CropX,L"Crop X",0,10); field(1,CropY,L"Crop Y",1,10); field(1,CropW,L"Crop width",0,11,1,L"EDIT",{},L"0 = off"); field(1,CropH,L"Crop height",1,11);
+ field(1,Rotation,L"Rotation",0,12,1,L"COMBOBOX",{L"0",L"90",L"180",L"270"}); button(1,HFlip,L"Horizontal flip",1,12,1,true); button(1,VFlip,L"Vertical flip",0,13,1,true); button(1,Gray,L"Grayscale",1,13,1,true);
+ button(1,Deinterlace,L"Deinterlace",0,14,1,true); button(1,Denoise,L"Denoise",1,14,1,true); button(1,Sharpen,L"Sharpen",0,15,1,true); button(1,Brightness,L"Brightness",1,15,1,true);
+ field(1,Contrast,L"Contrast",0,16,1,L"EDIT",{},L"0 - 3"); field(1,Saturation,L"Saturation",1,16,1,L"EDIT",{},L"0 - 3");
+ field(2,AudioFormat,L"Audio format",0,0,1,L"COMBOBOX",{L"m4a",L"mp3",L"flac",L"wav"}); field(2,AudioBitrate,L"Audio kbps",1,0); field(2,SampleRate,L"Sample rate",0,1); field(2,Channels,L"Channels",1,1);
+ field(2,Gain,L"Gain dB",0,2,1,L"EDIT",{},L"-60 - 60"); button(2,Mute,L"Mute",1,2,1,true); field(2,VideoTrack,L"Video track",0,3,1,L"COMBOBOX",{L"Auto"}); button(2,OnlyAudio,L"Export audio only",1,3,1,true);
+ auto audio = create(WC_LISTVIEWW,L"",WS_TABSTOP | LVS_REPORT,pages_[2],AudioTracks,0,0,200,180,WS_EX_CLIENTEDGE); ListView_SetExtendedListViewStyle(audio,LVS_EX_FULLROWSELECT | LVS_EX_CHECKBOXES); page_controls_[2].push_back({audio,0,4,2,0,180,false,true,0,0,0,0});
+ LVCOLUMNW track_column{}; track_column.mask = LVCF_WIDTH | LVCF_TEXT; track_column.cx = px(600); auto audio_title = tr(L"Audio"); track_column.pszText = audio_title.data(); ListView_InsertColumn(audio,0,&track_column);
+ field(3,SubtitleMode,L"Subtitle action",0,0,1,L"COMBOBOX",{L"None",L"Mux selected",L"Burn one",L"Extract selected"}); field(3,SubtitleFormat,L"Extract format",1,0,1,L"COMBOBOX",{L"srt",L"ass"});
+ field(3,SubtitleExternal,L"External SRT / ASS",0,1,1,L"EDIT",{},L"Subtitle file"); button(3,SubtitleUseExternal,L"Use external file",1,1,1,true);
+ button(3,SubtitleBrowse,L"Browse",0,2,1); button(3,AllowStyleLoss,L"Allow subtitle style loss",1,2,1,true);
+ field(3,SubtitleOffset,L"Offset seconds",0,3,1,L"EDIT",{},L"+ = later"); field(3,BurnTrack,L"Burn subtitle track",1,3,1,L"COMBOBOX",{L"Auto"});
+ auto sublist = create(WC_LISTVIEWW,L"",WS_TABSTOP | LVS_REPORT,pages_[3],SubtitleTracks,0,0,200,170,WS_EX_CLIENTEDGE); ListView_SetExtendedListViewStyle(sublist,LVS_EX_FULLROWSELECT | LVS_EX_CHECKBOXES); page_controls_[3].push_back({sublist,0,4,2,0,170,false,true,0,0,0,0}); auto subtitle_title = tr(L"Subtitles"); track_column.pszText = subtitle_title.data(); ListView_InsertColumn(sublist,0,&track_column);
+ button(3,Extract,L"Extract subtitles",-1,10,1);
+ button(4,ConcatNormalize,L"Normalize / re-encode",0,0,2,true); button(4,ConcatConfirm,L"Confirm: one video and at most one audio, subtitles dropped",0,1,2,true);
+ field(4,ClipStart,L"Clip start",0,2); field(4,ClipEnd,L"Clip end",1,2,1,L"EDIT",{},L"blank = full");
+ button(4,ConcatTarget,L"Apply target size to normalized output",-1,3,1,true); button(4,ClipSave,L"Save clip range",-1,3,1);
+ button(4,ConcatUp,L"Move up",-1,4,1); button(4,ConcatDown,L"Move down",-1,4,1); button(4,ConcatStart,L"Join files",-1,4,1,false,true);
+ field(5,Language,L"Language",0,0,1,L"COMBOBOX",{L"English",L"简体中文"}); button(5,ModernMenu,L"Windows 11 modern menu",0,1,2,true);
+ field(5,Presets,L"Size presets",0,2,1,L"EDIT",{},L"Comma separated");
+ button(5,Register,L"Register / repair menus",-1,3,1); button(5,Unregister,L"Remove menus",-1,3,1); button(5,Hardware,L"Test hardware",-1,3,1); button(5,SaveSettings,L"Save settings",-1,3,1);
+ auto log = create(L"EDIT",L"",WS_VSCROLL | ES_MULTILINE | ES_AUTOVSCROLL | ES_READONLY | WS_BORDER,pages_[5],Log,0,0,200,200,WS_EX_CLIENTEDGE); page_controls_[5].push_back({log,0,4,2,0,200,false,true,0,0,0,0});
+ output_ = create(L"EDIT",L"",WS_TABSTOP | ES_AUTOHSCROLL,window_,Output,0,0,200,kOutputHeight);
+ auto cue = tr(L"Beside each source"); SendMessageW(output_,EM_SETCUEBANNER,TRUE,reinterpret_cast<LPARAM>(cue.c_str()));
+ make_button(window_,Browse,L"Browse"); status_ = create(L"STATIC",tr(L"Ready"),0,window_,0,0,0,200,24);
+ auto progress = create(PROGRESS_CLASSW,L"",0,window_,AllProgress,0,0,10,4); SendMessageW(progress,PBM_SETRANGE32,0,1000); ShowWindow(progress,SW_HIDE);
+ make_button(window_,Retry,L"Retry failed"); make_button(window_,Cancel,L"Cancel"); make_button(window_,Run,L"Start",false,true);
  DragAcceptFiles(window_,TRUE); load_options(settings_.options); choice(Language,settings_.chinese ? 1 : 0); check(ModernMenu,settings_.modern_menu); text(Presets,wide(settings_.presets)); text(ClipStart,L"0"); text(ClipEnd,L"");
  layout(); change_tab(); update_buttons(); SetTimer(window_,1,100,nullptr);
 }
+
 void Window::layout() {
- RECT r; GetClientRect(window_,&r); int w = MulDiv(r.right,96,dpi_), h = MulDiv(r.bottom,96,dpi_);
- MoveWindow(list_,px(10),px(40),px(std::max(100,w-20)),px(122),TRUE); MoveWindow(tabs_,px(10),px(170),px(w-20),px(std::max(80,h-278)),TRUE);
- RECT page_rect; GetWindowRect(tabs_,&page_rect); MapWindowPoints(nullptr,window_,reinterpret_cast<POINT*>(&page_rect),2); TabCtrl_AdjustRect(tabs_,FALSE,&page_rect);
- for (int i=0;i<6;++i) { MoveWindow(pages_[i],page_rect.left+px(2),page_rect.top+px(2),page_rect.right-page_rect.left-px(4),page_rect.bottom-page_rect.top-px(4),TRUE); layout_page(i); }
- MoveWindow(control(Summary),px(10),px(h-100),px(w-20),px(20),TRUE); MoveWindow(output_,px(10),px(h-77),px(w-120),px(24),TRUE); MoveWindow(control(Browse),px(w-102),px(h-77),px(92),px(24),TRUE);
- MoveWindow(status_,px(10),px(h-43),px(std::max(80,w-410)),px(22),TRUE); MoveWindow(control(AllProgress),px(10),px(h-15),px(std::max(80,w-410)),px(7),TRUE);
- MoveWindow(control(Retry),px(w-390),px(h-43),px(124),px(30),TRUE); MoveWindow(control(Cancel),px(w-260),px(h-43),px(116),px(30),TRUE); MoveWindow(control(Run),px(w-138),px(h-43),px(128),px(30),TRUE); player_.resize();
+ RECT client{0,0,0,0}; GetClientRect(window_,&client); if (size_.right>0) client = size_; int w = MulDiv(client.right,96,dpi_), h = MulDiv(client.bottom,96,dpi_);
+ int x = kMargin; for (int id : {Add,Remove,Clear,Edit,Reset,Open}) { int width = widths_[id]; MoveWindow(control(id),px(x),px(kToolbarTop),px(width),px(kToolbarHeight),TRUE); x += width+kButtonGap; }
+ int settings_width = widths_[SettingsButton]; MoveWindow(control(SettingsButton),px(w-kMargin-settings_width),px(kToolbarTop),px(settings_width),px(kToolbarHeight),TRUE);
+ int list_width = std::max(160,w-2*kMargin);
+ MoveWindow(list_,px(kMargin),px(kListTop),px(list_width),px(kListHeight),TRUE);
+ RECT area; GetClientRect(list_,&area); int inner = MulDiv(area.right,96,dpi_);
+ const int shares[] = {40,12,12,20,16}; for (int i=0;i<5;++i) ListView_SetColumnWidth(list_,i,px(inner*shares[i]/100));
+ int bottom = h-kBottomBar, output_top = bottom-kButtonGap-kOutputHeight, progress_top = output_top-9, page_bottom = progress_top-6;
+
+ int tabs_height = std::max(140,page_bottom-kTabsTop);
+ MoveWindow(tabs_,px(kMargin),px(kTabsTop),px(list_width),px(tabs_height),TRUE);
+ RECT display{0,0,px(list_width),px(tabs_height)}; TabCtrl_AdjustRect(tabs_,FALSE,&display);
+ int page_width = std::max(px(160),static_cast<int>(display.right-display.left)), page_height = std::max(px(80),static_cast<int>(display.bottom-display.top));
+ for (int i=0;i<6;++i) { MoveWindow(pages_[i],px(kMargin)+display.left,px(kTabsTop)+display.top,page_width,page_height,TRUE); layout_page(i); }
+ int browse_width = widths_[Browse];
+ MoveWindow(output_,px(kMargin),px(output_top),px(std::max(160,list_width-browse_width-kButtonGap)),px(kOutputHeight),TRUE);
+ MoveWindow(control(Browse),px(w-kMargin-browse_width),px(output_top),px(browse_width),px(kOutputHeight),TRUE);
+ MoveWindow(control(AllProgress),px(kMargin),px(progress_top),px(list_width),px(8),TRUE);
+ int run_width = widths_[Run], cancel_width = widths_[Cancel], retry_width = widths_[Retry], button_y = bottom+(kBottomBar-kToolbarHeight)/2;
+ int run_x = w-kMargin-run_width, cancel_x = run_x-kButtonGap-cancel_width, retry_x = cancel_x-kButtonGap-retry_width;
+ MoveWindow(control(Run),px(run_x),px(button_y),px(run_width),px(kToolbarHeight),TRUE);
+ MoveWindow(control(Cancel),px(cancel_x),px(button_y),px(cancel_width),px(kToolbarHeight),TRUE);
+ MoveWindow(control(Retry),px(retry_x),px(button_y),px(retry_width),px(kToolbarHeight),TRUE);
+ MoveWindow(status_,px(kMargin),px(bottom+10),px(std::max(80,retry_x-kMargin-kButtonGap)),px(kBottomBar-20),TRUE);
+ player_.resize();
 }
+
 void Window::layout_page(int index) {
- RECT r; GetClientRect(pages_[index],&r); int content = 0, content_w = 0; for (auto& c : page_controls_[index]) { content = std::max(content,c.y+c.h+12); content_w = std::max(content_w,c.x+c.w+12); }
- int viewport = MulDiv(r.bottom,96,dpi_); scroll_[index] = std::clamp(scroll_[index],0,std::max(0,content-viewport));
- SCROLLINFO info{sizeof(info),SIF_RANGE | SIF_PAGE | SIF_POS,0,content-1,static_cast<UINT>(viewport),scroll_[index],0}; SetScrollInfo(pages_[index],SB_VERT,&info,TRUE);
- int viewport_w = MulDiv(r.right,96,dpi_); scroll_x_[index] = std::clamp(scroll_x_[index],0,std::max(0,content_w-viewport_w));
- SCROLLINFO horizontal{sizeof(horizontal),SIF_RANGE | SIF_PAGE | SIF_POS,0,content_w-1,static_cast<UINT>(viewport_w),scroll_x_[index],0}; SetScrollInfo(pages_[index],SB_HORZ,&horizontal,TRUE);
- for (auto& c : page_controls_[index]) MoveWindow(c.window,px(c.x-scroll_x_[index]),px(c.y-scroll_[index]),px(c.w),px(c.h),TRUE);
+ RECT client; GetClientRect(pages_[index],&client);
+ int width = MulDiv(client.right,96,dpi_)-MulDiv(GetSystemMetricsForDpi(SM_CXVSCROLL,dpi_),96,dpi_), height = MulDiv(client.bottom,96,dpi_);
+ int available = std::max(240,width-2*kPagePadding), column = std::max(280,(available-kColumnGap)/2), field = std::max(120,column-kLabelColumn);
+
+ std::map<int,int> flow_start, flow_cursor, flow_line;
+ for (auto& c : page_controls_[index]) {
+  if (!c.grid || c.col >= 0) continue;
+  if (flow_start.find(c.row) == flow_start.end()) { flow_start[c.row] = c.flush ? kPagePadding : kPagePadding+kLabelColumn; flow_cursor[c.row] = flow_start[c.row]; flow_line[c.row] = 0; }
+  int first = flow_start[c.row], usable = std::max(120,available-(first-kPagePadding));
+  int w = c.width > 0 ? c.width : c.width < 0 ? std::max(120,usable+c.width) : usable;
+  if (flow_cursor[c.row]+w > first+usable && flow_cursor[c.row] > first) { ++flow_line[c.row]; flow_cursor[c.row] = first; }
+  c.x = flow_cursor[c.row]; c.w = w; c.h = std::max(c.height,kControlHeight); c.line = flow_line[c.row];
+  flow_cursor[c.row] += w+kButtonGap;
+ }
+
+ std::map<int,int> rows; int last_row = -1;
+ for (auto& c : page_controls_[index]) {
+  if (!c.grid) continue;
+  int span = c.line+std::max(1,(c.h+kRowPitch-1)/kRowPitch);
+  if (c.row+span > last_row) last_row = c.row+span;
+ }
+ if (last_row < 0) { max_scroll_[index] = 0; scroll_[index] = 0; scroll_x_[index] = 0; return; }
+ for (int r=0;r<=last_row;++r) rows[r] = kRowPitch;
+ for (auto& c : page_controls_[index]) {
+  if (!c.grid) continue;
+  int span = c.line+std::max(1,(c.h+kRowPitch-1)/kRowPitch), need = c.line*kRowPitch+c.h, have = 0;
+  for (int r=c.row;r<c.row+span && r<=last_row;++r) have += rows[r];
+  if (need > have) { int add = (need-have+span-1)/span; for (int r=c.row;r<c.row+span && r<=last_row;++r) rows[r] += add; }
+ }
+ std::map<int,int> top; int y = kPagePadding;
+ for (int r=0;r<=last_row;++r) { top[r] = y; y += rows[r]; }
+
+ int content = 0;
+ for (auto& c : page_controls_[index]) {
+  if (!c.grid) { if (c.y+c.h > content) content = c.y+c.h; continue; }
+  if (c.col >= 0 && c.label) {
+   c.x = kPagePadding+c.col*(column+kColumnGap); c.y = top[c.row]+label_offset_; c.w = kLabelColumn-kLabelGap; c.h = label_height_;
+  } else if (c.col >= 0) {
+   c.x = c.flush ? kPagePadding+c.col*(column+kColumnGap) : c.col == 0 && c.span == 2 ? kPagePadding : kPagePadding+c.col*(column+kColumnGap)+kLabelColumn;
+   c.y = top[c.row];
+   c.w = c.width > 0 ? c.width : c.flush ? (c.span == 2 ? available : column) : c.col == 0 && c.span == 2 ? available : c.span == 2 ? std::max(120,available-kLabelColumn-kButtonGap-field) : field;
+   c.h = c.height > 0 ? c.height : kControlHeight;
+  } else {
+   c.y = top[c.row]+c.line*kRowPitch;
+  }
+  if (c.y+c.h > content) content = c.y+c.h;
+ }
+ max_scroll_[index] = std::max(0,content+kPagePadding-std::max(1,height));
+ scroll_[index] = std::clamp(scroll_[index],0,max_scroll_[index]); scroll_x_[index] = 0;
+ for (auto& c : page_controls_[index]) MoveWindow(c.window,px(c.x),px(c.y-scroll_[index]),px(c.w),px(c.h),TRUE);
+ SCROLLINFO info{sizeof(info)}; info.fMask = SIF_RANGE | SIF_PAGE | SIF_POS; info.nMin = 0;
+ info.nMax = max_scroll_[index]+std::max(1,height)-1; info.nPage = static_cast<UINT>(std::max(1,height)); info.nPos = scroll_[index];
+ SetScrollInfo(pages_[index],SB_VERT,&info,TRUE);
 }
+
 void Window::change_tab() {
  int next = TabCtrl_GetCurSel(tabs_); if (next < 0) next = 0;
  if (page_ == 1 && next != 1) stop_preview(); page_ = next;
@@ -252,12 +362,12 @@ void Window::on_event(std::unique_ptr<UiEvent> event) {
  if(event->origin==2) { preview_busy_=false; update_buttons(); }
  if (event->type == UiEvent::Type::Progress && event->index < jobs_.size()) {
   auto& job = jobs_[event->index]; job.state = State::Running; job.fraction = event->progress.fraction; job.detail = event->progress.message;
-  SetWindowTextW(status_,wide(job.detail).c_str()); SendMessageW(control(AllProgress),PBM_SETPOS,static_cast<WPARAM>(job.fraction*1000),0); update_list();
+  SetWindowTextW(status_,wide(job.detail).c_str()); SendMessageW(control(AllProgress),PBM_SETPOS,static_cast<WPARAM>(job.fraction*1000),0); ShowWindow(control(AllProgress),SW_SHOW); update_list();
  } else if (event->type == UiEvent::Type::Result && event->index < jobs_.size()) {
   auto& job = jobs_[event->index]; job.result = std::move(event->result); job.state = job.result.state; job.detail = job.result.message; if (job.state == State::Completed) job.fraction = 1;
   if (selected() == static_cast<int>(event->index)) { std::wstring message = wide(job.detail); for (auto& output : job.result.outputs) message += L"\r\n"+output.path.wstring(); text(Log,message); } update_list();
  } else if (event->type == UiEvent::Type::Done) {
-  busy_ = false; if (batch_.joinable()) batch_.join(); SetWindowTextW(status_,tr(L"Ready").c_str()); update_buttons(); if (closing_) DestroyWindow(window_);
+  busy_ = false; if (batch_.joinable()) batch_.join(); SetWindowTextW(status_,tr(L"Ready").c_str()); update_buttons(); SendMessageW(control(AllProgress),PBM_SETPOS,0,0); ShowWindow(control(AllProgress),SW_HIDE); if (closing_) DestroyWindow(window_);
  } else if (event->type == UiEvent::Type::Probe && event->index == static_cast<size_t>(selected())) {
   media_ = std::move(event->media); loading_ = true; SendMessageW(control(VideoTrack),CB_RESETCONTENT,0,0); SendMessageW(control(VideoTrack),CB_ADDSTRING,0,reinterpret_cast<LPARAM>(tr(L"Auto").c_str())); choice(VideoTrack,0);
   ListView_DeleteAllItems(control(AudioTracks)); ListView_DeleteAllItems(control(SubtitleTracks)); SendMessageW(control(BurnTrack),CB_RESETCONTENT,0,0); SendMessageW(control(BurnTrack),CB_ADDSTRING,0,reinterpret_cast<LPARAM>(tr(L"None").c_str())); choice(BurnTrack,0);
@@ -359,16 +469,18 @@ void Window::command(int id) {
 }
 void Window::rebuild_language() {
  int index=selected(); auto value = options(); stop_preview(); for (auto child = GetWindow(window_,GW_CHILD);child;) { auto next = GetWindow(child,GW_HWNDNEXT); DestroyWindow(child); child = next; }
- for (auto& page : page_controls_) page.clear(); controls_.clear(); labels_.clear(); if (font_) DeleteObject(font_); font_ = nullptr; settings_.options = value; build(); update_list(); if(index>=0 && index<static_cast<int>(jobs_.size())) ListView_SetItemState(list_,index,LVIS_SELECTED | LVIS_FOCUSED,LVIS_SELECTED | LVIS_FOCUSED);
+ for (auto& page : page_controls_) page.clear(); controls_.clear(); labels_.clear(); widths_.clear();
+ if (font_) DeleteObject(font_); font_ = nullptr;
+ settings_.options = value; build(); update_list(); if(index>=0 && index<static_cast<int>(jobs_.size())) ListView_SetItemState(list_,index,LVIS_SELECTED | LVIS_FOCUSED,LVIS_SELECTED | LVIS_FOCUSED);
 }
 void Window::shutdown() { cancel_ = probe_cancel_ = preview_cancel_ = true; player_.close(); if (batch_.joinable()) batch_.join(); if (probe_worker_.joinable()) probe_worker_.join(); if (preview_worker_.joinable()) preview_worker_.join(); if (service_worker_.joinable()) service_worker_.join(); }
 LRESULT CALLBACK Window::focus_procedure(HWND window,UINT message,WPARAM w,LPARAM l,UINT_PTR,DWORD_PTR data) {
  auto self = reinterpret_cast<Window*>(data);
  if (message == WM_SETFOCUS) for (int i=0;i<6;++i) if (GetParent(window)==self->pages_[i]) {
-  RECT bounds; GetClientRect(self->pages_[i],&bounds); int width=MulDiv(bounds.right,96,self->dpi_), height=MulDiv(bounds.bottom,96,self->dpi_);
+  RECT bounds; GetClientRect(self->pages_[i],&bounds); int height=MulDiv(bounds.bottom,96,self->dpi_);
   for (auto& c:self->page_controls_[i]) if(c.window==window) {
-   if(c.y < self->scroll_[i]) self->scroll_[i]=c.y; else if(c.y+c.h > self->scroll_[i]+height) self->scroll_[i]=c.y+c.h-height;
-   if(c.x < self->scroll_x_[i]) self->scroll_x_[i]=c.x; else if(c.x+c.w > self->scroll_x_[i]+width) self->scroll_x_[i]=c.x+c.w-width;
+   if (c.y < self->scroll_[i]) self->scroll_[i] = c.y;
+   else if (c.y+c.h > self->scroll_[i]+height-2*kPagePadding) self->scroll_[i] = c.y+c.h-height+2*kPagePadding;
    self->layout_page(i); break;
   } break;
  }
@@ -376,13 +488,21 @@ LRESULT CALLBACK Window::focus_procedure(HWND window,UINT message,WPARAM w,LPARA
 }
 LRESULT CALLBACK Window::page_procedure(HWND window,UINT message,WPARAM w,LPARAM l,UINT_PTR,DWORD_PTR data) {
  auto self = reinterpret_cast<Window*>(data);
- if (message == WM_COMMAND || message == WM_NOTIFY || (message == WM_HSCROLL && l)) return SendMessageW(self->window_,message,w,l);
- if (message == WM_VSCROLL || message == WM_HSCROLL || message == WM_MOUSEWHEEL) {
-  int index = 0; while (index<6 && self->pages_[index]!=window) ++index; if (index==6) return 0; int delta = 0;
-  bool horizontal = message == WM_HSCROLL; auto& position = horizontal ? self->scroll_x_[index] : self->scroll_[index];
-  if (message == WM_MOUSEWHEEL) delta = -GET_WHEEL_DELTA_WPARAM(w)/WHEEL_DELTA*60;
-  else { int code = LOWORD(w); if (code == SB_LINEUP) delta = -24; if (code == SB_LINEDOWN) delta = 24; if (code == SB_PAGEUP) delta = -180; if (code == SB_PAGEDOWN) delta = 180; if (code == SB_TOP) position=0; if (code == SB_BOTTOM) position=INT_MAX; if (code == SB_THUMBTRACK || code == SB_THUMBPOSITION) { SCROLLINFO info{sizeof(info),SIF_TRACKPOS}; GetScrollInfo(window,horizontal ? SB_HORZ : SB_VERT,&info); position = info.nTrackPos; } }
-  position += delta; self->layout_page(index); return 0;
+ if (message == WM_COMMAND || message == WM_NOTIFY) return SendMessageW(self->window_,message,w,l);
+ int index = 0; while (index<6 && self->pages_[index]!=window) ++index; if (index==6) return DefSubclassProc(window,message,w,l);
+ if (message == WM_MOUSEWHEEL) { self->scroll_[index] = std::clamp(self->scroll_[index]-GET_WHEEL_DELTA_WPARAM(w)/WHEEL_DELTA*80,0,self->max_scroll_[index]); self->layout_page(index); return 0; }
+ if (message == WM_VSCROLL) {
+  RECT client; GetClientRect(window,&client); int page = std::max(1,MulDiv(client.bottom,96,self->dpi_));
+  SCROLLINFO info{sizeof(info)}; info.fMask = SIF_ALL; GetScrollInfo(window,SB_VERT,&info);
+  int next = self->scroll_[index];
+  switch (LOWORD(w)) {
+   case SB_LINEUP: next -= 32; break; case SB_LINEDOWN: next += 32; break;
+   case SB_PAGEUP: next -= page; break; case SB_PAGEDOWN: next += page; break;
+   case SB_THUMBTRACK: case SB_THUMBPOSITION: next = info.nTrackPos; break;
+   case SB_TOP: next = 0; break; case SB_BOTTOM: next = self->max_scroll_[index]; break;
+   default: break;
+  }
+  self->scroll_[index] = std::clamp(next,0,self->max_scroll_[index]); self->layout_page(index); return 0;
  }
  return DefSubclassProc(window,message,w,l);
 }
@@ -392,7 +512,7 @@ LRESULT CALLBACK Window::procedure(HWND window,UINT message,WPARAM w,LPARAM l) {
  if (!self) return DefWindowProcW(window,message,w,l);
  try {
   if (message == WM_CREATE) { self->build(); return 0; }
-  if (message == WM_SIZE) { if (self->list_) self->layout(); return 0; }
+  if (message == WM_SIZE) { self->size_ = {0,0,LOWORD(l),HIWORD(l)}; if (self->list_) self->layout(); return 0; }
   if (message == WM_GETMINMAXINFO) { auto info = reinterpret_cast<MINMAXINFO*>(l); info->ptMinTrackSize = {self->px(760),self->px(560)}; return 0; }
   if (message == WM_DPICHANGED) { self->dpi_ = HIWORD(w); auto rect = reinterpret_cast<RECT*>(l); auto value = self->options(); SetWindowPos(window,nullptr,rect->left,rect->top,rect->right-rect->left,rect->bottom-rect->top,SWP_NOZORDER); self->settings_.options = value; self->rebuild_language(); return 0; }
   if (message == WM_COMMAND) {
@@ -425,7 +545,7 @@ LRESULT CALLBACK Window::procedure(HWND window,UINT message,WPARAM w,LPARAM l) {
   }
   if (message == WM_TIMER) { self->timer(); return 0; }
   if (message == WM_CLOSE) {
-   if (self->busy_) { if (MessageBoxW(window,self->settings_.chinese ? L"取消正在处理的任务并关闭？" : L"Cancel the running batch and close?",L"Convertii",MB_YESNO | MB_ICONQUESTION) == IDYES) { self->closing_ = true; self->cancel_ = true; } return 0; }
+   if (self->busy_) { if (MessageBoxW(window,self->settings_.chinese ? L"取消失败中的任务并关闭？" : L"Cancel the running batch and close?",L"Convertii",MB_YESNO | MB_ICONQUESTION) == IDYES) { self->closing_ = true; self->cancel_ = true; } return 0; }
    self->shutdown(); try { self->settings_.options = self->options(); save_settings(self->settings_); } catch (...) {} DestroyWindow(window); return 0;
   }
   if (message == WM_DESTROY) { KillTimer(window,1); PostQuitMessage(0); return 0; }

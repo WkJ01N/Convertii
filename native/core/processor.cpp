@@ -142,7 +142,7 @@ static void encode_av(const Engine& engine, const Media& media, const Options& o
   if (p.two_pass) add(args,{L"-pass",std::to_wstring(pass),L"-passlogfile",(workspace / L"pass").wstring()});
   if (first) add(args,{L"-f",L"null",L"-"});
   else { if ((o.video_format == "mp4" && !audio_only) || (audio_only && o.audio_format == "m4a")) add(args,{L"-movflags",L"+faststart"}); args.push_back(output.wstring()); }
-  std::string label = "Encoding · pass " + std::to_string(pass) + '/' + std::to_string(passes); if (progress) progress({static_cast<double>(pass-1)/passes*.97,label});
+  std::string label = "Encoding pass " + std::to_string(pass) + '/' + std::to_string(passes); if (progress) progress({static_cast<double>(pass-1)/passes*.97,label});
   ensure(run(engine.ffmpeg,args,cancel,[=](const std::string& line) { progress_line(line,p.duration,static_cast<double>(pass-1)/passes*.97,.97/passes,progress,label); },0,workspace));
  }
 }
