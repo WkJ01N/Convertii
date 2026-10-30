@@ -7,7 +7,9 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 $repo = Split-Path $PSScriptRoot -Parent
-$version = '0.2.0'
+$project = Get-Content -LiteralPath (Join-Path $repo 'CMakeLists.txt') -Raw
+if ($project -notmatch 'project\s*\(\s*Convertii\s+VERSION\s+([0-9]+\.[0-9]+\.[0-9]+)') { throw 'Cannot read the project version from CMakeLists.txt.' }
+$version = $Matches[1]
 $out = Join-Path $repo 'artifacts\release'
 $bundle = Join-Path $out "Convertii-$version-win-x64"
 if (Test-Path -LiteralPath $bundle) { throw 'This release directory already exists. Move it aside before creating a fresh release.' }
