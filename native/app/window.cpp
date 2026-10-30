@@ -109,9 +109,23 @@ HWND Window::open(int show) {
  cls.hIconSm = static_cast<HICON>(LoadImageW(instance_,MAKEINTRESOURCEW(1),IMAGE_ICON,GetSystemMetrics(SM_CXSMICON),GetSystemMetrics(SM_CYSMICON),LR_DEFAULTCOLOR));
  if (!cls.hIconSm) cls.hIconSm = LoadIconW(nullptr,IDI_APPLICATION);
  RegisterClassExW(&cls);
- dpi_ = static_cast<int>(GetDpiForSystem()); RECT work; SystemParametersInfoW(SPI_GETWORKAREA,0,&work,0); int width = std::min(px(1100),static_cast<int>(work.right-work.left)), height = std::min(px(860),static_cast<int>(work.bottom-work.top));
- auto window = CreateWindowExW(WS_EX_CONTROLPARENT,cls.lpszClassName,L"Convertii",WS_OVERLAPPEDWINDOW,CW_USEDEFAULT,CW_USEDEFAULT,width,height,nullptr,nullptr,instance_,this); if (!window) throw Error(win_error());
- ShowWindow(window,show); UpdateWindow(window); return window;
+ dpi_ = static_cast<int>(GetDpiForSystem()); RECT work; SystemParametersInfoW(SPI_GETWORKAREA,0,&work,0);
+ int width = std::min(px(1100),static_cast<int>(work.right-work.left)), height = std::min(px(860),static_cast<int>(work.bottom-work.top));
+ int x = CW_USEDEFAULT, y = CW_USEDEFAULT;
+ // A saved geometry is only reused while it still fits on a monitor, so a
+ // window parked on a disconnected display comes back at the default size.
+ const auto& saved = settings_.placement;
+ if (saved.width >= px(760) && saved.height >= px(560) && saved.x + saved.width > work.left + px(80) && saved.y + saved.height > work.top + px(80)) {
+  x = std::max(static_cast<int>(work.left),std::min(saved.x,static_cast<int>(work.right) - px(160)));
+  y = std::max(static_cast<int>(work.top),std::min(saved.y,static_cast<int>(work.bottom) - px(120)));
+  width = std::min(saved.width,static_cast<int>(work.right-work.left)); height = std::min(saved.height,static_cast<int>(work.bottom-work.top));
+ }
+ auto window = CreateWindowExW(WS_EX_CONTROLPARENT,cls.lpszClassName,L"Convertii",WS_OVERLAPPEDWINDOW,x,y,width,height,nullptr,nullptr,instance_,this); if (!window) throw Error(win_error());
+ if (saved.maximized) show = SW_SHOWMAXIMIZED;
+ ShowWindow(window,show); UpdateWindow(window);
+ // The tab control exists once WM_CREATE has run build(); restore the page now.
+ if (saved.tab > 0 && saved.tab < 6) { TabCtrl_SetCurSel(tabs_,saved.tab); change_tab(); }
+ return window;
 }
 void Window::build() {
  NONCLIENTMETRICSW metrics{sizeof(metrics)}; SystemParametersInfoForDpi(SPI_GETNONCLIENTMETRICS,sizeof(metrics),&metrics,0,dpi_);
@@ -552,7 +566,20 @@ LRESULT CALLBACK Window::procedure(HWND window,UINT message,WPARAM w,LPARAM l) {
   if (message == WM_TIMER) { self->timer(); return 0; }
   if (message == WM_CLOSE) {
    if (self->busy_) { if (MessageBoxW(window,self->settings_.chinese ? L"取消失败中的任务并关闭？" : L"Cancel the running batch and close?",L"Convertii",MB_YESNO | MB_ICONQUESTION) == IDYES) { self->closing_ = true; self->cancel_ = true; } return 0; }
-   self->shutdown(); try { self->settings_.options = self->options(); save_settings(self->settings_); } catch (...) {} DestroyWindow(window); return 0;
+   self->shutdown();
+   try {
+    self->settings_.options = self->options();
+    WINDOWPLACEMENT placement{sizeof(placement)};
+    if (GetWindowPlacement(window,&placement)) {
+     self->settings_.placement.maximized = placement.showCmd == SW_SHOWMAXIMIZED;
+     const RECT& normal = placement.rcNormalPosition;
+     self->settings_.placement.x = normal.left; self->settings_.placement.y = normal.top;
+     self->settings_.placement.width = normal.right - normal.left; self->settings_.placement.height = normal.bottom - normal.top;
+    }
+    self->settings_.placement.tab = std::max(0,static_cast<int>(TabCtrl_GetCurSel(self->tabs_)));
+    save_settings(self->settings_);
+   } catch (...) {}
+   DestroyWindow(window); return 0;
   }
   if (message == WM_DESTROY) { KillTimer(window,1); PostQuitMessage(0); return 0; }
  } catch (const std::exception& e) { MessageBoxW(window,wide(e.what()).c_str(),L"Convertii",MB_OK | MB_ICONERROR); return 0; }
