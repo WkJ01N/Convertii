@@ -20,7 +20,12 @@ foreach ($name in @('ffmpeg','ffprobe')) {
  $file = Join-Path $engineBin "$name.exe"
  if ((Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash -ne $engineLock."$($name)Sha256") { throw "Pinned $name checksum mismatch." }
 }
-$configuration = & (Join-Path $engineBin 'ffmpeg.exe') -buildconf 2>&1 | Out-String
+# the banner goes to stderr, and Windows PowerShell 5.1 turns redirected native
+# stderr into a terminating error while $ErrorActionPreference is 'Stop'
+$previous = $ErrorActionPreference
+$ErrorActionPreference = 'Continue'
+try { $configuration = (& (Join-Path $engineBin 'ffmpeg.exe') -buildconf) 2>&1 | Out-String }
+finally { $ErrorActionPreference = $previous }
 if ($configuration.Contains('--enable-nonfree')) { throw 'Non-redistributable engine build refused.' }
 foreach ($name in @('LICENSE','README.txt')) { if (-not (Test-Path -LiteralPath (Join-Path $EngineDirectory $name))) { throw "Engine $name is required." } }
 if ($DownloadBaseUri -and -not $DownloadBaseUri.StartsWith('https://')) { throw 'Release downloads must use HTTPS.' }
