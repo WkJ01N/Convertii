@@ -37,6 +37,8 @@
 
 主程序：artifacts/native-build/bin/Release/Convertii.exe。CTest 包含真实媒体测试、原生界面/播放/单实例测试、安装安全与回滚测试，以及两类 Shell 的 4,000 文件传递测试。截图和测试数据保存在 artifacts。详细人工验收见 docs/TESTING.md。
 
+构建目录记录源码的绝对路径，移动仓库所在盘符后不能直接复用。Build.ps1 发现 CMakeCache.txt 指向别的源码目录时会删除该目录并重新配置；需要保留编译缓存时，请在移动前删掉 artifacts 下的 native-build、setup-build、shell-build。
+
 引擎依次从 CONVERTII_ENGINE_DIR、程序旁的 engine 目录、PATH 查找。设置位于 %LOCALAPPDATA%\Convertii\settings.json；旧版设置首次迁移时保存 settings.v1.bak。CONVERTII_DATA_DIR 可隔离设置，CONVERTII_CACHE_DIR 可隔离预览缓存。
 
     Convertii.exe --check-engine report.json
