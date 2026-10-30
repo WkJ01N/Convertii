@@ -19,7 +19,11 @@ static std::atomic<long> objects{0};
 
 static bool Chinese() { return PRIMARYLANGID(GetUserDefaultUILanguage()) == LANG_CHINESE; }
 static const wchar_t* CompressTitle() { return Chinese() ? L"压缩大小" : L"Compress size"; }
-static const wchar_t* ConvertTitle() { return Chinese() ? L"格式转换" : L"Convert format"; }
+static const wchar_t* ConvertTitle() { return Chinese() ? L"转换格式" : L"Convert format"; }
+static const wchar_t* FullTitle() { return Chinese() ? L"打开完整窗口…" : L"Open full window..."; }
+// Menu entries: 0 = compress in the quick window, 1 = convert in the quick
+// window, 2 = the full window (queue, tabs and all options).
+static constexpr int kCommands = 3;
 static std::wstring AppPath() {
     wchar_t buffer[32768];
     DWORD n = GetModuleFileNameW(moduleHandle, buffer, ARRAYSIZE(buffer));
@@ -28,12 +32,14 @@ static std::wstring AppPath() {
     return path.substr(0, path.find_last_of(L"\\/") + 1) + L"Convertii.exe";
 }
 
-static HRESULT Launch(IShellItemArray* items, bool convert) {
+static HRESULT Launch(IShellItemArray* items, bool convert, bool quick) {
     if (!items) return E_INVALIDARG;
     DWORD count = 0;
     HRESULT hr = items->GetCount(&count);
     if (FAILED(hr) || count == 0) return E_INVALIDARG;
-    std::wstring request = convert ? L"convert\n" : L"compress\n";
+    std::wstring request = convert ? L"convert" : L"compress";
+    if (quick) request += L" quick";
+    request += L'\n';
     for (DWORD i = 0; i < count; ++i) {
         ComPtr<IShellItem> item;
         PWSTR path = nullptr;
@@ -95,7 +101,7 @@ public:
     IFACEMETHODIMP_(ULONG) AddRef() override { return ++refs; }
     IFACEMETHODIMP_(ULONG) Release() override { auto n = --refs; if (!n) delete this; return n; }
     IFACEMETHODIMP Next(ULONG count, IExplorerCommand** commands, ULONG* fetched) override;
-    IFACEMETHODIMP Skip(ULONG count) override { auto remaining = 2UL - position; position += std::min(count, remaining); return count <= remaining ? S_OK : S_FALSE; }
+    IFACEMETHODIMP Skip(ULONG count) override { auto remaining = static_cast<ULONG>(kCommands) - position; position += std::min(count, remaining); return count <= remaining ? S_OK : S_FALSE; }
     IFACEMETHODIMP Reset() override { position = 0; return S_OK; }
     IFACEMETHODIMP Clone(IEnumExplorerCommand** result) override {
         if (!result) return E_POINTER;
@@ -117,14 +123,20 @@ public:
     }
     IFACEMETHODIMP_(ULONG) AddRef() override { return ++refs; }
     IFACEMETHODIMP_(ULONG) Release() override { auto n = --refs; if (!n) delete this; return n; }
-    IFACEMETHODIMP GetTitle(IShellItemArray*, PWSTR* title) override { return SHStrDupW(action == -1 ? L"Convertii" : action == 0 ? CompressTitle() : ConvertTitle(), title); }
+    IFACEMETHODIMP GetTitle(IShellItemArray*, PWSTR* title) override {
+        const wchar_t* value = L"Convertii";
+        if (action == 0) value = CompressTitle();
+        else if (action == 1) value = ConvertTitle();
+        else if (action == 2) value = FullTitle();
+        return SHStrDupW(value, title);
+    }
     IFACEMETHODIMP GetIcon(IShellItemArray*, PWSTR* icon) override { return SHStrDupW((AppPath() + L",0").c_str(), icon); }
     IFACEMETHODIMP GetToolTip(IShellItemArray*, PWSTR* text) override { *text = nullptr; return E_NOTIMPL; }
     IFACEMETHODIMP GetCanonicalName(GUID* name) override { *name = CLSID_Modern; name->Data1 += action + 1; return S_OK; }
     IFACEMETHODIMP GetState(IShellItemArray* items, BOOL, EXPCMDSTATE* state) override {
         DWORD count = 0; *state = items && SUCCEEDED(items->GetCount(&count)) && count ? ECS_ENABLED : ECS_HIDDEN; return S_OK;
     }
-    IFACEMETHODIMP Invoke(IShellItemArray* items, IBindCtx*) override { return Launch(items, action == 1); }
+    IFACEMETHODIMP Invoke(IShellItemArray* items, IBindCtx*) override { return Launch(items, action == 1, action != 2); }
     IFACEMETHODIMP GetFlags(EXPCMDFLAGS* flags) override { *flags = action == -1 ? ECF_HASSUBCOMMANDS : ECF_DEFAULT; return S_OK; }
     IFACEMETHODIMP EnumSubCommands(IEnumExplorerCommand** commands) override {
         *commands = nullptr;
@@ -135,7 +147,7 @@ public:
 HRESULT Enumerator::Next(ULONG count, IExplorerCommand** commands, ULONG* fetched) {
     if (!commands || (count != 1 && !fetched)) return E_POINTER;
     ULONG done = 0;
-    while (done < count && position < 2) {
+    while (done < count && position < static_cast<ULONG>(kCommands)) {
         commands[done] = new(std::nothrow) ExplorerCommand(static_cast<int>(position));
         if (!commands[done]) { if (fetched) *fetched = done; return E_OUTOFMEMORY; }
         ++done; ++position;
@@ -164,18 +176,19 @@ public:
         return data ? SHCreateShellItemArrayFromDataObject(data, IID_PPV_ARGS(&selection)) : E_INVALIDARG;
     }
     IFACEMETHODIMP QueryContextMenu(HMENU menu, UINT index, UINT first, UINT last, UINT flags) override {
-        if ((flags & CMF_DEFAULTONLY) || last - first < 1 || !selection) return MAKE_HRESULT(SEVERITY_SUCCESS, 0, 0);
+        if ((flags & CMF_DEFAULTONLY) || last - first < static_cast<UINT>(kCommands) || !selection) return MAKE_HRESULT(SEVERITY_SUCCESS, 0, 0);
         HMENU child = CreatePopupMenu();
         if (!child) return E_FAIL;
         AppendMenuW(child, MF_STRING, first, CompressTitle());
         AppendMenuW(child, MF_STRING, first + 1, ConvertTitle());
+        AppendMenuW(child, MF_STRING, first + 2, FullTitle());
         InsertMenuW(menu, index, MF_BYPOSITION | MF_POPUP, reinterpret_cast<UINT_PTR>(child), L"Convertii");
-        return MAKE_HRESULT(SEVERITY_SUCCESS, 0, 2);
+        return MAKE_HRESULT(SEVERITY_SUCCESS, 0, kCommands);
     }
     IFACEMETHODIMP InvokeCommand(CMINVOKECOMMANDINFO* info) override {
         if (HIWORD(info->lpVerb)) return E_INVALIDARG;
         auto command = LOWORD(info->lpVerb);
-        return command < 2 ? Launch(selection.Get(), command == 1) : E_INVALIDARG;
+        return command < static_cast<UINT>(kCommands) ? Launch(selection.Get(), command == 1, command != 2) : E_INVALIDARG;
     }
     IFACEMETHODIMP GetCommandString(UINT_PTR, UINT, UINT*, LPSTR, UINT) override { return E_NOTIMPL; }
 };

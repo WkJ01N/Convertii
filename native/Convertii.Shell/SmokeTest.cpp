@@ -32,11 +32,11 @@ int wmain(int argc, wchar_t** argv) {
         if (flags != ECF_HASSUBCOMMANDS) return 8;
         ComPtr<IEnumExplorerCommand> enumerator;
         if (FAILED(command->EnumSubCommands(&enumerator))) return 9;
-        IExplorerCommand* children[2]{}; ULONG fetched = 0;
-        if (enumerator->Next(2, children, &fetched) != S_OK || fetched != 2) return 10;
+        IExplorerCommand* children[3]{}; ULONG fetched = 0;
+        if (enumerator->Next(3, children, &fetched) != S_OK || fetched != 3) return 10;
         for (auto child : children) { child->GetTitle(nullptr, &title); if (!title) return 11; CoTaskMemFree(title); child->Release(); }
         if (enumerator->Next(1, children, &fetched) != S_FALSE || fetched != 0) return 12;
-        if (enumerator->Reset() != S_OK || enumerator->Skip(3) != S_FALSE) return 13;
+        if (enumerator->Reset() != S_OK || enumerator->Skip(4) != S_FALSE) return 13;
         factory.Reset();
         if (FAILED(getClass(legacy, IID_PPV_ARGS(&factory)))) return 14;
         ComPtr<IShellExtInit> init;
@@ -69,7 +69,7 @@ int wmain(int argc, wchar_t** argv) {
         popup = CreatePopupMenu();
         auto legacyCount = menu->QueryContextMenu(popup, 0, 1, 100, 0);
         DestroyMenu(popup);
-        if (HRESULT_CODE(legacyCount) != 2) return 26;
+        if (HRESULT_CODE(legacyCount) != 3) return 26;
         auto capture = directory + L"\\captured.req"; DeleteFileW(capture.c_str());
         SetEnvironmentVariableW(L"CONVERTII_SHELL_TEST_CAPTURE", capture.c_str());
         enumerator->Reset(); IExplorerCommand* child = nullptr;
@@ -83,7 +83,7 @@ int wmain(int argc, wchar_t** argv) {
         auto bytes = WideCharToMultiByte(CP_UTF8, 0, fixture.data(), static_cast<int>(fixture.size()), nullptr, 0, nullptr, nullptr);
         std::string utf8(bytes, '\0');
         WideCharToMultiByte(CP_UTF8, 0, fixture.data(), static_cast<int>(fixture.size()), utf8.data(), bytes, nullptr, nullptr);
-        std::string expected = "compress\n";
+        std::string expected = "compress quick\n";
         for (int i = 0; i < 4000; ++i) expected += utf8 + "\n";
         if (captured != expected) return 24;
         DeleteFileW(capture.c_str());
@@ -94,7 +94,7 @@ int wmain(int argc, wchar_t** argv) {
         std::string legacyCaptured((std::istreambuf_iterator<char>(legacyInput)), std::istreambuf_iterator<char>());
         legacyInput.close();
         DeleteFileW(fixture.c_str()); DeleteFileW(capture.c_str()); SetEnvironmentVariableW(L"CONVERTII_SHELL_TEST_CAPTURE", nullptr);
-        expected.replace(0, 9, "convert\n");
+        expected.replace(0, 14, "convert quick");
         if (legacyCaptured != expected) return 28;
         return 0;
     }();
