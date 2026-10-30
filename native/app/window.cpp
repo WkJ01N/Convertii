@@ -1,4 +1,5 @@
 #include "window.h"
+#include <convertii/media_types.h>
 #include <cstdio>
 #include <shellapi.h>
 #include <commdlg.h>
@@ -18,7 +19,8 @@ enum Id {
  AudioTracks=290, VideoTrack, AudioBitrate, SampleRate, Channels, Gain, Mute, OnlyAudio,
  SubtitleTracks=310, SubtitleMode, SubtitleExternal, SubtitleBrowse, SubtitleUseExternal, SubtitleOffset, SubtitleFormat, BurnTrack, AllowStyleLoss, Extract,
  ConcatNormalize=340, ConcatConfirm, ConcatUp, ConcatDown, ConcatStart, ClipStart, ClipEnd, ClipSave, ConcatTarget,
- Language=360, ModernMenu, Presets, Register, Unregister, Hardware, SaveSettings, Summary, AllProgress, Log, PreviewStatus
+ Language=360, ModernMenu, Presets, Register, Unregister, Hardware, SaveSettings, Summary, AllProgress, Log, PreviewStatus,
+ MenuCascade, MenuIcons, MenuMediaOnly, MenuFolders, MenuCompress, MenuConvert, MenuFull
 };
 constexpr UINT UI_EVENT = WM_APP + 2;
 namespace {
@@ -68,7 +70,7 @@ std::wstring Window::tr(const wchar_t* value) const {
  {L"Normalize / re-encode",L"统一参数后转码拼接"},{L"Confirm: one video and at most one audio, subtitles dropped",L"确认：只合并一路视频及至多一路音频，省略字幕"},{L"Move up",L"上移"},{L"Move down",L"下移"},{L"Join files",L"开始拼接"},{L"Clip start",L"片段开始"},{L"Clip end (blank = full)",L"片段结束（空白 = 完整）"},{L"Save clip range",L"保存片段范围"},
  {L"Language",L"语言"},{L"Windows 11 modern menu",L"启用 Windows 11 新右键菜单"},{L"Size presets (comma-separated MB)",L"大小预设（逗号分隔，MB）"},{L"Register / repair menus",L"注册 / 修复右键"},{L"Remove menus",L"移除右键"},{L"Test hardware",L"检测硬件"},{L"Save settings",L"保存设置"},{L"File",L"文件"},{L"Size",L"大小"},{L"Progress",L"进度"},{L"Status",L"状态"},{L"Output",L"输出"},{L"Queued",L"等待处理"},{L"Probing",L"正在分析"},{L"Running",L"处理中"},{L"Confirmation",L"需要确认"},{L"Completed",L"已完成"},{L"Failed",L"失败"},{L"Cancelled",L"已取消"},{L"Ready",L"就绪"},{L"Original playback",L"原片播放"},{L"Proxy playback",L"代理片段播放"},{L"Effect preview",L"效果样片预览"},
  {L"Source time",L"源时间"},{L"Details",L"详情"},
-  {L"Convert format",L"格式转换"},{L"Picture",L"画面"},{L"Concat",L"拼接"},{L"Convert",L"转换"},{L"Save override",L"保存单独设置"},{L"File limit",L"单文件上限"},{L"Start time",L"开始时间"},{L"End time",L"结束时间"},{L"Speed",L"速度"},{L"Max width",L"最大宽度"},{L"Max height",L"最大高度"},{L"FPS",L"帧率"},{L"Video kbps",L"视频码率"},{L"Crop width",L"裁剪宽度"},{L"Brightness",L"亮度"},{L"Contrast",L"对比度"},{L"Saturation",L"饱和度"},{L"Gain dB",L"增益"},{L"Offset seconds",L"偏移秒数"},{L"Fast keyframe trim",L"快速关键帧截取"},{L"Play",L"播放"},{L"Effect preview",L"效果样片预览"},{L"JPEG RGB background",L"背景色"},{L"Size presets",L"大小预设"},{L"Clip end",L"片段结束"},{L"Apply target size to normalized output",L"对统一转码结果应用目标大小上限"},
+  {L"Convert format",L"格式转换"},{L"Picture",L"画面"},{L"Concat",L"拼接"},{L"Convert",L"转换"},{L"Save override",L"保存单独设置"},{L"File limit",L"单文件上限"},{L"Start time",L"开始时间"},{L"End time",L"结束时间"},{L"Speed",L"速度"},{L"Max width",L"最大宽度"},{L"Max height",L"最大高度"},{L"FPS",L"帧率"},{L"Video kbps",L"视频码率"},{L"Crop width",L"裁剪宽度"},{L"Brightness",L"亮度"},{L"Contrast",L"对比度"},{L"Saturation",L"饱和度"},{L"Gain dB",L"增益"},{L"Offset seconds",L"偏移秒数"},{L"Fast keyframe trim",L"快速关键帧截取"},{L"Play",L"播放"},{L"Effect preview",L"效果样片预览"},{L"JPEG RGB background",L"背景色"},{L"Size presets",L"大小预设"},{L"Cascade submenu",L"级联子菜单"},{L"Show icons",L"显示图标"},{L"Media files only",L"仅对媒体文件显示"},{L"Folder menu",L"文件夹菜单"},{L"Compress entry",L"「压缩大小」项"},{L"Convert entry",L"「转换格式」项"},{L"Full window entry",L"「完整窗口」项"},{L"Clip end",L"片段结束"},{L"Apply target size to normalized output",L"对统一转码结果应用目标大小上限"},
   {L"0 = source",L"0 = 原始"},{L"0 = auto",L"0 = 自动"},{L"blank = full",L"留空 = 完整"},{L"0.25 - 4",L"0.25～4"},{L"-60 - 60",L"-60～60"},{L"-1 - 1",L"-1～1"},{L"0 - 3",L"0～3"},{L"0 = off",L"0 = 关闭"},{L"+ = later",L"正数 = 延后"},{L"Beside each source",L"留空则放在源文件旁"},{L"Subtitle file",L"字幕文件"},{L"hh:mm:ss.ms",L"时:分:秒.毫秒"},{L"Comma separated",L"逗号分隔"}
  }; auto it = dictionary.find(value); return it == dictionary.end() ? value : it->second;
 }
@@ -180,14 +182,20 @@ void Window::build() {
  button(4,ConcatUp,L"Move up",-1,4,1); button(4,ConcatDown,L"Move down",-1,4,1); button(4,ConcatStart,L"Join files",-1,4,1);
  field(5,Language,L"Language",0,0,1,L"COMBOBOX",{L"English",L"简体中文"}); button(5,ModernMenu,L"Windows 11 modern menu",0,1,2,true);
  field(5,Presets,L"Size presets",0,2,1,L"EDIT",{},L"Comma separated");
- button(5,Register,L"Register / repair menus",-1,3,1); button(5,Unregister,L"Remove menus",-1,3,1); button(5,Hardware,L"Test hardware",-1,3,1); button(5,SaveSettings,L"Save settings",-1,3,1);
- auto log = create(L"EDIT",L"",WS_VSCROLL | ES_MULTILINE | ES_AUTOVSCROLL | ES_READONLY | WS_BORDER,pages_[5],Log,0,0,200,200,WS_EX_CLIENTEDGE); page_controls_[5].push_back({log,0,4,2,0,200,false,true,0,0,0,0});
+ button(5,MenuCascade,L"Cascade submenu",0,3,1,true); button(5,MenuIcons,L"Show icons",1,3,1,true);
+ button(5,MenuMediaOnly,L"Media files only",0,4,1,true); button(5,MenuFolders,L"Folder menu",1,4,1,true);
+ button(5,MenuCompress,L"Compress entry",0,5,1,true); button(5,MenuConvert,L"Convert entry",1,5,1,true);
+ button(5,MenuFull,L"Full window entry",0,6,1,true);
+ button(5,Register,L"Register / repair menus",-1,7,1); button(5,Unregister,L"Remove menus",-1,7,1); button(5,Hardware,L"Test hardware",-1,7,1); button(5,SaveSettings,L"Save settings",-1,7,1);
+ auto log = create(L"EDIT",L"",WS_VSCROLL | ES_MULTILINE | ES_AUTOVSCROLL | ES_READONLY | WS_BORDER,pages_[5],Log,0,0,200,200,WS_EX_CLIENTEDGE); page_controls_[5].push_back({log,0,8,2,0,110,false,true,0,0,0,0});
  output_ = create(L"EDIT",L"",WS_TABSTOP | ES_AUTOHSCROLL,window_,Output,0,0,200,kOutputHeight);
  auto cue = tr(L"Beside each source"); SendMessageW(output_,EM_SETCUEBANNER,TRUE,reinterpret_cast<LPARAM>(cue.c_str()));
  make_button(window_,Browse,L"Browse"); status_ = create(L"STATIC",tr(L"Ready"),0,window_,0,0,0,200,24);
  auto progress = create(PROGRESS_CLASSW,L"",0,window_,AllProgress,0,0,10,4); SendMessageW(progress,PBM_SETRANGE32,0,1000); ShowWindow(progress,SW_HIDE);
  make_button(window_,Retry,L"Retry failed"); make_button(window_,Cancel,L"Cancel"); make_button(window_,Run,L"Start",false,true);
- DragAcceptFiles(window_,TRUE); load_options(settings_.options); choice(Language,settings_.chinese ? 1 : 0); check(ModernMenu,settings_.modern_menu); text(Presets,wide(settings_.presets)); text(ClipStart,L"0"); text(ClipEnd,L"");
+ DragAcceptFiles(window_,TRUE); load_options(settings_.options); choice(Language,settings_.chinese ? 1 : 0); check(ModernMenu,settings_.modern_menu);
+ check(MenuCascade,settings_.shell.cascade); check(MenuIcons,settings_.shell.icons); check(MenuMediaOnly,settings_.shell.media_only); check(MenuFolders,settings_.shell.folders);
+ check(MenuCompress,settings_.shell.compress); check(MenuConvert,settings_.shell.convert); check(MenuFull,settings_.shell.full); text(Presets,wide(settings_.presets)); text(ClipStart,L"0"); text(ClipEnd,L"");
  layout(); change_tab(); update_buttons(); SetTimer(window_,1,100,nullptr);
 }
 
@@ -330,8 +338,21 @@ Options Window::options() const {
 }
 void Window::add_files(const Launch& launch) {
  if (launch.action && jobs_.empty() && !busy_) choice(Operation,*launch.action == Action::Convert ? 1 : 0);
+ // A folder picked from the shell menu expands to the media files it holds.
+ std::vector<fs::path> inputs;
  for (auto& path : launch.files) {
-  if (!fs::is_regular_file(path)) continue; auto full = fs::absolute(path).lexically_normal(); if (std::any_of(jobs_.begin(),jobs_.end(),[&](auto& j) { return j.request.inputs.size()==1 && j.state!=State::Completed && j.state!=State::Failed && j.state!=State::Cancelled && _wcsicmp(j.request.inputs[0].path.c_str(),full.c_str()) == 0; })) continue;
+  if (fs::is_directory(path)) {
+   std::error_code error;
+   for (fs::directory_iterator entry(path,fs::directory_options::skip_permission_denied,error), end; entry != end; entry.increment(error)) {
+    if (error) break; if (!entry->is_regular_file()) continue;
+    if (!is_media_extension(lower_extension(utf8(entry->path().extension().wstring())))) continue;
+    inputs.push_back(entry->path());
+   }
+  } else if (fs::is_regular_file(path)) inputs.push_back(path);
+ }
+ std::sort(inputs.begin(),inputs.end());
+ for (auto& path : inputs) {
+  auto full = fs::absolute(path).lexically_normal(); if (std::any_of(jobs_.begin(),jobs_.end(),[&](auto& j) { return j.request.inputs.size()==1 && j.state!=State::Completed && j.state!=State::Failed && j.state!=State::Cancelled && _wcsicmp(j.request.inputs[0].path.c_str(),full.c_str()) == 0; })) continue;
   Job job; job.request.inputs.push_back({full}); job.request.options = settings_.options; if (launch.action && (busy_ || !jobs_.empty())) { try { job.request.options = options(); } catch (...) {} job.request.options.action = *launch.action; job.override_settings = true; } jobs_.push_back(std::move(job));
  }
  update_list(); if (selected() < 0 && !jobs_.empty()) ListView_SetItemState(list_,0,LVIS_SELECTED | LVIS_FOCUSED,LVIS_SELECTED | LVIS_FOCUSED); update_buttons();
@@ -485,12 +506,18 @@ void Window::command(int id) {
  else if (id == ClipSave && selected() >= 0) { auto& input = jobs_[selected()].request.inputs[0]; input.start = time_value(utf8(text(ClipStart))); input.end = time_value(utf8(text(ClipEnd))); if (input.end && input.end <= input.start) throw Error("Invalid clip range."); auto value=options(); input.video=value.video_track; input.audio=value.mute ? -1 : value.audio_tracks.empty() ? -2 : value.audio_tracks[0]; }
  else if (id == SettingsButton) { TabCtrl_SetCurSel(tabs_,5); change_tab(); }
  else if (id == SaveSettings) {
-  if(editing_) throw Error("Finish per-file settings first."); auto value = options(); settings_.options = value; settings_.modern_menu = checked(ModernMenu); settings_.presets = utf8(text(Presets)); std::istringstream presets(settings_.presets); std::string entry; unsigned count=0;
+  if(editing_) throw Error("Finish per-file settings first."); const bool was_modern = settings_.modern_menu && settings_.shell.cascade; auto value = options(); settings_.options = value; settings_.modern_menu = checked(ModernMenu); settings_.presets = utf8(text(Presets));
+  settings_.shell.cascade = checked(MenuCascade); settings_.shell.icons = checked(MenuIcons); settings_.shell.media_only = checked(MenuMediaOnly);
+  settings_.shell.folders = checked(MenuFolders); settings_.shell.compress = checked(MenuCompress); settings_.shell.convert = checked(MenuConvert); settings_.shell.full = checked(MenuFull); std::istringstream presets(settings_.presets); std::string entry; unsigned count=0;
   while (std::getline(presets,entry,',')) { double n = parse(wide(entry)); if (n <= 0 || n > 1000000 || ++count>20) throw Error("Invalid size preset."); } if(!count) throw Error("At least one size preset is required.");
   bool change = settings_.chinese != (choice(Language)==1); settings_.chinese = choice(Language)==1; save_settings(settings_);
+  // The entries follow settings.json live, but flat versus sub menu is a
+  // registration choice, so that one is refreshed here.
+  const bool now_modern = settings_.modern_menu && settings_.shell.cascade;
+  if (was_modern != now_modern) service([now_modern] { return register_shell(executable_dir(), now_modern); });
   if (change) rebuild_language(); else { auto target=text(Target); SendMessageW(control(Target),CB_RESETCONTENT,0,0); std::istringstream stream(settings_.presets); while(std::getline(stream,entry,',')) SendMessageW(control(Target),CB_ADDSTRING,0,reinterpret_cast<LPARAM>(wide(entry).c_str())); text(Target,target); }
  }
- else if (id == Register) { bool modern = checked(ModernMenu); service([modern] { return register_shell(executable_dir(),modern); }); }
+ else if (id == Register) { bool modern = checked(ModernMenu) && checked(MenuCascade); service([modern] { return register_shell(executable_dir(),modern); }); }
  else if (id == Unregister) service([] { unregister_shell(executable_dir()); return "Context menus removed."; });
  else if (id == Hardware) service([this] { auto result = detect_hardware(engine_, nullptr, true); std::string message; for (auto& c : result) message += c.encoder + (c.available ? ": available\r\n" : ": unavailable\r\n"); return message; });
 }

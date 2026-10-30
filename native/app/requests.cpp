@@ -10,8 +10,8 @@ Launch parse_launch(const std::vector<std::wstring>& args) {
   std::istringstream input(read_text(file)); std::string line; std::getline(input,line);
   // "compress quick" asks for the small window instead of the full one.
   launch.action = line.starts_with("convert") ? Action::Convert : Action::Compress; launch.quick = line.find(" quick") != std::string::npos;
-  while (std::getline(input,line)) { if (!line.empty() && line.back() == '\r') line.pop_back(); auto path = fs::path(wide(line)); if (fs::is_regular_file(path)) launch.files.push_back(path); } fs::remove(file);
- } else for (auto& arg : args) { if (arg == L"--compress") launch.action = Action::Compress; else if (arg == L"--quick") launch.quick = true; else if (arg == L"--convert") launch.action = Action::Convert; else if (fs::is_regular_file(arg)) launch.files.push_back(fs::absolute(arg)); }
+  while (std::getline(input,line)) { if (!line.empty() && line.back() == '\r') line.pop_back(); auto path = fs::path(wide(line)); if (fs::is_regular_file(path) || fs::is_directory(path)) launch.files.push_back(path); } fs::remove(file);
+ } else for (auto& arg : args) { if (arg == L"--compress") launch.action = Action::Compress; else if (arg == L"--quick") launch.quick = true; else if (arg == L"--convert") launch.action = Action::Convert; else if (fs::is_regular_file(arg) || fs::is_directory(arg)) launch.files.push_back(fs::absolute(arg)); }
  return launch;
 }
 Broker::Broker() {

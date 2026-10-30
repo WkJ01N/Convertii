@@ -18,6 +18,12 @@ int wmain(int argc, wchar_t** argv) {
     auto unload = reinterpret_cast<HRESULT(__stdcall*)()>(GetProcAddress(module, "DllCanUnloadNow"));
     if (!getClass || !unload) return 4;
     int result = [&] {
+        wchar_t location[32768]; GetFullPathNameW(argv[1], ARRAYSIZE(location), location, nullptr);
+        std::wstring directory(location); directory.resize(directory.find_last_of(L"\\/"));
+        // Pin the menu configuration: every entry on, folders included.
+        SetEnvironmentVariableW(L"CONVERTII_DATA_DIR", directory.c_str());
+        auto settingsPath = std::filesystem::path(directory) / "settings.json";
+        { std::ofstream settingsFile(settingsPath); settingsFile << "{ \"shell\": { \"cascade\": true, \"icons\": true, \"media_only\": true, \"folders\": true, \"compress\": true, \"convert\": true, \"full\": true } }"; }
         CLSID modern, legacy;
         CLSIDFromString(L"{7CC6BF21-8EE4-4376-A67B-BAC4236BB110}", &modern);
         CLSIDFromString(L"{7CC6BF21-8EE4-4376-A67B-BAC4236BB111}", &legacy);
@@ -32,11 +38,11 @@ int wmain(int argc, wchar_t** argv) {
         if (flags != ECF_HASSUBCOMMANDS) return 8;
         ComPtr<IEnumExplorerCommand> enumerator;
         if (FAILED(command->EnumSubCommands(&enumerator))) return 9;
-        IExplorerCommand* children[3]{}; ULONG fetched = 0;
-        if (enumerator->Next(3, children, &fetched) != S_OK || fetched != 3) return 10;
+        IExplorerCommand* children[4]{}; ULONG fetched = 0;
+        if (enumerator->Next(4, children, &fetched) != S_OK || fetched != 4) return 10;
         for (auto child : children) { child->GetTitle(nullptr, &title); if (!title) return 11; CoTaskMemFree(title); child->Release(); }
         if (enumerator->Next(1, children, &fetched) != S_FALSE || fetched != 0) return 12;
-        if (enumerator->Reset() != S_OK || enumerator->Skip(4) != S_FALSE) return 13;
+        if (enumerator->Reset() != S_OK || enumerator->Skip(5) != S_FALSE) return 13;
         factory.Reset();
         if (FAILED(getClass(legacy, IID_PPV_ARGS(&factory)))) return 14;
         ComPtr<IShellExtInit> init;
@@ -47,8 +53,6 @@ int wmain(int argc, wchar_t** argv) {
         DestroyMenu(popup);
         if (hr != S_OK) return 17;
         if (unload() != S_FALSE) return 18;
-        wchar_t location[32768]; GetFullPathNameW(argv[1], ARRAYSIZE(location), location, nullptr);
-        std::wstring directory(location); directory.resize(directory.find_last_of(L"\\/"));
         auto fixture = directory + L"\\中文 selection.mp4";
         auto file = CreateFileW(fixture.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
         if (file == INVALID_HANDLE_VALUE) return 20; CloseHandle(file);
@@ -69,7 +73,7 @@ int wmain(int argc, wchar_t** argv) {
         popup = CreatePopupMenu();
         auto legacyCount = menu->QueryContextMenu(popup, 0, 1, 100, 0);
         DestroyMenu(popup);
-        if (HRESULT_CODE(legacyCount) != 3) return 26;
+        if (HRESULT_CODE(legacyCount) != 3) return 26; // files: compress, convert, full
         auto capture = directory + L"\\captured.req"; DeleteFileW(capture.c_str());
         SetEnvironmentVariableW(L"CONVERTII_SHELL_TEST_CAPTURE", capture.c_str());
         enumerator->Reset(); IExplorerCommand* child = nullptr;
@@ -94,6 +98,7 @@ int wmain(int argc, wchar_t** argv) {
         std::string legacyCaptured((std::istreambuf_iterator<char>(legacyInput)), std::istreambuf_iterator<char>());
         legacyInput.close();
         DeleteFileW(fixture.c_str()); DeleteFileW(capture.c_str()); SetEnvironmentVariableW(L"CONVERTII_SHELL_TEST_CAPTURE", nullptr);
+        DeleteFileW(settingsPath.c_str()); SetEnvironmentVariableW(L"CONVERTII_DATA_DIR", nullptr);
         expected.replace(0, 14, "convert quick");
         if (legacyCaptured != expected) return 28;
         return 0;

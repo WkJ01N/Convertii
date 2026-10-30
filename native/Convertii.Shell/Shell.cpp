@@ -3,12 +3,18 @@
 #include <shobjidl.h>
 #include <shlobj.h>
 #include <shlwapi.h>
+#include <shellapi.h>
 #include <wrl/client.h>
 #include <atomic>
 #include <string>
+#include <string_view>
 #include <vector>
 #include <new>
 #include <algorithm>
+#include <fstream>
+#include <iterator>
+#include <nlohmann/json.hpp>
+#include "convertii/media_types.h"
 
 using Microsoft::WRL::ComPtr;
 // These identifiers must match Register-Shell.ps1 and AppxManifest.xml.
@@ -17,13 +23,24 @@ static const CLSID CLSID_Legacy = {0x7cc6bf21,0x8ee4,0x4376,{0xa6,0x7b,0xba,0xc4
 static HMODULE moduleHandle;
 static std::atomic<long> objects{0};
 
+// Menu entries. 0 and 1 ask for the small window, 2 for the full window and 3
+// for "convert this folder".
+enum Command { kCompress = 0, kConvert = 1, kFull = 2, kFolder = 3 };
+
 static bool Chinese() { return PRIMARYLANGID(GetUserDefaultUILanguage()) == LANG_CHINESE; }
 static const wchar_t* CompressTitle() { return Chinese() ? L"压缩大小" : L"Compress size"; }
 static const wchar_t* ConvertTitle() { return Chinese() ? L"转换格式" : L"Convert format"; }
 static const wchar_t* FullTitle() { return Chinese() ? L"打开完整窗口…" : L"Open full window..."; }
-// Menu entries: 0 = compress in the quick window, 1 = convert in the quick
-// window, 2 = the full window (queue, tabs and all options).
-static constexpr int kCommands = 3;
+static const wchar_t* FolderTitle() { return Chinese() ? L"转换此文件夹…" : L"Convert this folder..."; }
+static const wchar_t* TitleFor(int command) {
+    switch (command) {
+    case kCompress: return CompressTitle();
+    case kConvert: return ConvertTitle();
+    case kFolder: return FolderTitle();
+    default: return FullTitle();
+    }
+}
+
 static std::wstring AppPath() {
     wchar_t buffer[32768];
     DWORD n = GetModuleFileNameW(moduleHandle, buffer, ARRAYSIZE(buffer));
@@ -32,24 +49,118 @@ static std::wstring AppPath() {
     return path.substr(0, path.find_last_of(L"\\/") + 1) + L"Convertii.exe";
 }
 
-static HRESULT Launch(IShellItemArray* items, bool convert, bool quick) {
-    if (!items) return E_INVALIDARG;
+// User settings live next to the application's settings.json, so the menu can
+// follow the same switches the settings page writes without a second copy.
+static std::wstring DataRoot() {
+    wchar_t value[32768];
+    if (GetEnvironmentVariableW(L"CONVERTII_DATA_DIR", value, ARRAYSIZE(value))) return value;
+    PWSTR known = nullptr;
+    std::wstring root;
+    if (SUCCEEDED(SHGetKnownFolderPath(FOLDERID_LocalAppData, 0, nullptr, &known))) {
+        root.assign(known);
+        root += L"\\Convertii";
+    }
+    CoTaskMemFree(known);
+    return root;
+}
+
+struct MenuConfig {
+    bool cascade = true, icons = true, media_only = true, folders = true;
+    bool compress = true, convert = true, full = true;
+};
+
+static MenuConfig LoadConfig() {
+    MenuConfig config;
+    auto root = DataRoot();
+    if (root.empty()) return config;
+    std::ifstream input((root + L"\\settings.json").c_str(), std::ios::binary);
+    if (!input) return config;
+    try {
+        auto value = nlohmann::json::parse(std::string(std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>()));
+        if (!value.contains("shell") || !value["shell"].is_object()) return config;
+        const auto& shell = value["shell"];
+        config.cascade = shell.value("cascade", true);
+        config.icons = shell.value("icons", true);
+        config.media_only = shell.value("media_only", true);
+        config.folders = shell.value("folders", true);
+        config.compress = shell.value("compress", true);
+        config.convert = shell.value("convert", true);
+        config.full = shell.value("full", true);
+    } catch (...) {
+        // A half written settings file must never break the context menu.
+    }
+    return config;
+}
+
+static bool IsMediaPath(const std::wstring& path) {
+    auto dot = path.find_last_of(L'.');
+    auto slash = path.find_last_of(L"\\/");
+    if (dot == std::wstring::npos || (slash != std::wstring::npos && dot < slash)) return false;
+    std::string extension;
+    for (auto index = dot; index < path.size(); ++index) {
+        auto character = path[index];
+        if (character > 0x7f) return false;
+        extension.push_back(static_cast<char>(character));
+    }
+    return cvt::is_media_extension(cvt::lower_extension(extension));
+}
+
+struct Selection {
+    std::vector<std::wstring> files, folders;
+};
+
+static Selection ReadSelection(IShellItemArray* items) {
+    Selection selection;
+    if (!items) return selection;
     DWORD count = 0;
-    HRESULT hr = items->GetCount(&count);
-    if (FAILED(hr) || count == 0) return E_INVALIDARG;
-    std::wstring request = convert ? L"convert" : L"compress";
-    if (quick) request += L" quick";
-    request += L'\n';
-    for (DWORD i = 0; i < count; ++i) {
+    if (FAILED(items->GetCount(&count))) return selection;
+    for (DWORD index = 0; index < count; ++index) {
         ComPtr<IShellItem> item;
         PWSTR path = nullptr;
-        if (SUCCEEDED(items->GetItemAt(i, &item)) && SUCCEEDED(item->GetDisplayName(SIGDN_FILESYSPATH, &path))) {
-            const auto attributes = GetFileAttributesW(path);
-            if (attributes != INVALID_FILE_ATTRIBUTES && !(attributes & FILE_ATTRIBUTE_DIRECTORY)) {
-                request += path;
-                request += L'\n';
-            }
-            CoTaskMemFree(path);
+        if (FAILED(items->GetItemAt(index, &item)) || FAILED(item->GetDisplayName(SIGDN_FILESYSPATH, &path))) continue;
+        const auto attributes = GetFileAttributesW(path);
+        if (attributes != INVALID_FILE_ATTRIBUTES) {
+            if (attributes & FILE_ATTRIBUTE_DIRECTORY) selection.folders.emplace_back(path);
+            else selection.files.emplace_back(path);
+        }
+        CoTaskMemFree(path);
+    }
+    return selection;
+}
+
+// The commands offered for one selection, in menu order.
+static std::vector<int> CommandsFor(const Selection& selection, const MenuConfig& config) {
+    std::vector<int> commands;
+    if (selection.files.empty()) {
+        if (config.folders && selection.folders.size() == 1) commands.push_back(kFolder);
+        return commands;
+    }
+    if (config.media_only) {
+        const auto media = std::any_of(selection.files.begin(), selection.files.end(), IsMediaPath);
+        if (!media) return commands;
+    }
+    if (config.compress) commands.push_back(kCompress);
+    if (config.convert) commands.push_back(kConvert);
+    if (config.full) commands.push_back(kFull);
+    return commands;
+}
+
+static HRESULT Launch(const Selection& selection, int command) {
+    if (command == kFolder) {
+        if (selection.folders.size() != 1) return E_INVALIDARG;
+    } else if (selection.files.empty()) {
+        return E_INVALIDARG;
+    }
+    std::wstring request = command == kConvert ? L"convert" : L"compress";
+    if (command == kCompress || command == kConvert) request += L" quick";
+    request += L'\n';
+    if (command == kFolder) {
+        request += selection.folders.front();
+        request += L'\n';
+    } else {
+        for (const auto& file : selection.files) {
+            request += file;
+            request += L'\n';
         }
     }
     if (request.size() > 8 * 1024 * 1024) return HRESULT_FROM_WIN32(ERROR_BUFFER_OVERFLOW);
@@ -75,10 +186,10 @@ static HRESULT Launch(IShellItemArray* items, bool convert, bool quick) {
     CloseHandle(handle);
     if (!success) { DeleteFileW(file.c_str()); return E_FAIL; }
     auto app = AppPath();
-    auto command = L"\"" + app + L"\" --request \"" + file + L"\"";
+    auto invocation = L"\"" + app + L"\" --request \"" + file + L"\"";
     STARTUPINFOW startup{}; startup.cb = sizeof(startup);
     PROCESS_INFORMATION process{};
-    if (!CreateProcessW(app.c_str(), command.data(), nullptr, nullptr, FALSE, 0, nullptr, nullptr, &startup, &process)) {
+    if (!CreateProcessW(app.c_str(), invocation.data(), nullptr, nullptr, FALSE, 0, nullptr, nullptr, &startup, &process)) {
         auto error = HRESULT_FROM_WIN32(GetLastError());
         DeleteFileW(file.c_str()); return error;
     }
@@ -86,12 +197,43 @@ static HRESULT Launch(IShellItemArray* items, bool convert, bool quick) {
     return S_OK;
 }
 
-class ExplorerCommand;
+// A 16 pixel copy of the application icon for the classic (flat) menu.
+static HBITMAP MenuIcon(int size) {
+    static HBITMAP cached[2]{};
+    static int cachedSize[2]{};
+    static std::atomic<int> next{0};
+    for (int index = 0; index < 2; ++index) {
+        if (cachedSize[index] == size && cached[index]) return cached[index];
+    }
+    HICON icon = nullptr;
+    if (!ExtractIconExW(AppPath().c_str(), 0, nullptr, &icon, 1) || !icon) return nullptr;
+    auto screen = GetDC(nullptr);
+    auto bitmap = CreateCompatibleBitmap(screen, size, size);
+    auto memory = CreateCompatibleDC(screen);
+    ReleaseDC(nullptr, screen);
+    if (bitmap && memory) {
+        auto previous = SelectObject(memory, bitmap);
+        RECT area{0, 0, size, size};
+        FillRect(memory, &area, reinterpret_cast<HBRUSH>(COLOR_MENU + 1));
+        DrawIconEx(memory, 0, 0, icon, size, size, 0, nullptr, DI_NORMAL);
+        SelectObject(memory, previous);
+    }
+    if (memory) DeleteDC(memory);
+    DestroyIcon(icon);
+    if (!bitmap) return nullptr;
+    auto slot = next.fetch_add(1) % 2;
+    if (cached[slot]) DeleteObject(cached[slot]);
+    cached[slot] = bitmap;
+    cachedSize[slot] = size;
+    return bitmap;
+}
+
 class Enumerator final : public IEnumExplorerCommand {
     std::atomic<ULONG> refs{1};
+    std::vector<int> commands;
     ULONG position = 0;
 public:
-    Enumerator() { ++objects; }
+    explicit Enumerator(std::vector<int> values) : commands(std::move(values)) { ++objects; }
     ~Enumerator() { --objects; }
     IFACEMETHODIMP QueryInterface(REFIID id, void** value) override {
         if (!value) return E_POINTER; *value = nullptr;
@@ -100,21 +242,26 @@ public:
     }
     IFACEMETHODIMP_(ULONG) AddRef() override { return ++refs; }
     IFACEMETHODIMP_(ULONG) Release() override { auto n = --refs; if (!n) delete this; return n; }
-    IFACEMETHODIMP Next(ULONG count, IExplorerCommand** commands, ULONG* fetched) override;
-    IFACEMETHODIMP Skip(ULONG count) override { auto remaining = static_cast<ULONG>(kCommands) - position; position += std::min(count, remaining); return count <= remaining ? S_OK : S_FALSE; }
+    IFACEMETHODIMP Next(ULONG count, IExplorerCommand** result, ULONG* fetched) override;
+    IFACEMETHODIMP Skip(ULONG count) override {
+        auto remaining = static_cast<ULONG>(commands.size()) - position;
+        position += std::min(count, remaining);
+        return count <= remaining ? S_OK : S_FALSE;
+    }
     IFACEMETHODIMP Reset() override { position = 0; return S_OK; }
     IFACEMETHODIMP Clone(IEnumExplorerCommand** result) override {
         if (!result) return E_POINTER;
-        auto clone = new(std::nothrow) Enumerator(); if (!clone) return E_OUTOFMEMORY;
+        auto clone = new(std::nothrow) Enumerator(commands); if (!clone) return E_OUTOFMEMORY;
         clone->position = position; *result = clone; return S_OK;
     }
 };
 
 class ExplorerCommand final : public IExplorerCommand {
     std::atomic<ULONG> refs{1};
-    int action; // -1 parent, 0 compress, 1 convert
+    int command; // -1 for the parent entry
+    MenuConfig config;
 public:
-    explicit ExplorerCommand(int value = -1) : action(value) { ++objects; }
+    explicit ExplorerCommand(int value = -1) : command(value), config(LoadConfig()) { ++objects; }
     ~ExplorerCommand() { --objects; }
     IFACEMETHODIMP QueryInterface(REFIID id, void** value) override {
         if (!value) return E_POINTER; *value = nullptr;
@@ -124,32 +271,43 @@ public:
     IFACEMETHODIMP_(ULONG) AddRef() override { return ++refs; }
     IFACEMETHODIMP_(ULONG) Release() override { auto n = --refs; if (!n) delete this; return n; }
     IFACEMETHODIMP GetTitle(IShellItemArray*, PWSTR* title) override {
-        const wchar_t* value = L"Convertii";
-        if (action == 0) value = CompressTitle();
-        else if (action == 1) value = ConvertTitle();
-        else if (action == 2) value = FullTitle();
-        return SHStrDupW(value, title);
+        return SHStrDupW(command < 0 ? L"Convertii" : TitleFor(command), title);
     }
-    IFACEMETHODIMP GetIcon(IShellItemArray*, PWSTR* icon) override { return SHStrDupW((AppPath() + L",0").c_str(), icon); }
-    IFACEMETHODIMP GetToolTip(IShellItemArray*, PWSTR* text) override { *text = nullptr; return E_NOTIMPL; }
-    IFACEMETHODIMP GetCanonicalName(GUID* name) override { *name = CLSID_Modern; name->Data1 += action + 1; return S_OK; }
+    IFACEMETHODIMP GetIcon(IShellItemArray*, PWSTR* icon) override {
+        if (!config.icons) return E_NOTIMPL;
+        return SHStrDupW((AppPath() + L",0").c_str(), icon);
+    }
+    IFACEMETHODIMP GetToolTip(IShellItemArray*, PWSTR* value) override { *value = nullptr; return E_NOTIMPL; }
+    IFACEMETHODIMP GetCanonicalName(GUID* name) override { *name = CLSID_Modern; name->Data1 += static_cast<unsigned long>(command + 1); return S_OK; }
     IFACEMETHODIMP GetState(IShellItemArray* items, BOOL, EXPCMDSTATE* state) override {
-        DWORD count = 0; *state = items && SUCCEEDED(items->GetCount(&count)) && count ? ECS_ENABLED : ECS_HIDDEN; return S_OK;
+        *state = ECS_HIDDEN;
+        if (!items) return S_OK;
+        const auto commands = CommandsFor(ReadSelection(items), config);
+        if (commands.empty()) return S_OK;
+        if (command < 0 || std::find(commands.begin(), commands.end(), command) != commands.end()) *state = ECS_ENABLED;
+        return S_OK;
     }
-    IFACEMETHODIMP Invoke(IShellItemArray* items, IBindCtx*) override { return Launch(items, action == 1, action != 2); }
-    IFACEMETHODIMP GetFlags(EXPCMDFLAGS* flags) override { *flags = action == -1 ? ECF_HASSUBCOMMANDS : ECF_DEFAULT; return S_OK; }
+    IFACEMETHODIMP Invoke(IShellItemArray* items, IBindCtx*) override {
+        return Launch(ReadSelection(items), command);
+    }
+    IFACEMETHODIMP GetFlags(EXPCMDFLAGS* flags) override { *flags = command < 0 ? ECF_HASSUBCOMMANDS : ECF_DEFAULT; return S_OK; }
     IFACEMETHODIMP EnumSubCommands(IEnumExplorerCommand** commands) override {
         *commands = nullptr;
-        if (action != -1) return E_NOTIMPL;
-        *commands = new(std::nothrow) Enumerator(); return *commands ? S_OK : E_OUTOFMEMORY;
+        if (command >= 0) return E_NOTIMPL;
+        std::vector<int> list;
+        if (config.compress) list.push_back(kCompress);
+        if (config.convert) list.push_back(kConvert);
+        if (config.full) list.push_back(kFull);
+        if (config.folders) list.push_back(kFolder);
+        *commands = new(std::nothrow) Enumerator(std::move(list)); return *commands ? S_OK : E_OUTOFMEMORY;
     }
 };
-HRESULT Enumerator::Next(ULONG count, IExplorerCommand** commands, ULONG* fetched) {
-    if (!commands || (count != 1 && !fetched)) return E_POINTER;
+HRESULT Enumerator::Next(ULONG count, IExplorerCommand** result, ULONG* fetched) {
+    if (!result || (count != 1 && !fetched)) return E_POINTER;
     ULONG done = 0;
-    while (done < count && position < static_cast<ULONG>(kCommands)) {
-        commands[done] = new(std::nothrow) ExplorerCommand(static_cast<int>(position));
-        if (!commands[done]) { if (fetched) *fetched = done; return E_OUTOFMEMORY; }
+    while (done < count && position < static_cast<ULONG>(commands.size())) {
+        result[done] = new(std::nothrow) ExplorerCommand(commands[position]);
+        if (!result[done]) { if (fetched) *fetched = done; return E_OUTOFMEMORY; }
         ++done; ++position;
     }
     if (fetched) *fetched = done;
@@ -159,6 +317,9 @@ HRESULT Enumerator::Next(ULONG count, IExplorerCommand** commands, ULONG* fetche
 class LegacyMenu final : public IShellExtInit, public IContextMenu {
     std::atomic<ULONG> refs{1};
     ComPtr<IShellItemArray> selection;
+    Selection current;
+    MenuConfig config = LoadConfig();
+    std::vector<int> commands;
 public:
     LegacyMenu() { ++objects; }
     ~LegacyMenu() { --objects; }
@@ -173,22 +334,58 @@ public:
     IFACEMETHODIMP_(ULONG) Release() override { auto n = --refs; if (!n) delete this; return n; }
     IFACEMETHODIMP Initialize(PCIDLIST_ABSOLUTE, IDataObject* data, HKEY) override {
         selection.Reset();
-        return data ? SHCreateShellItemArrayFromDataObject(data, IID_PPV_ARGS(&selection)) : E_INVALIDARG;
+        commands.clear();
+        current = Selection{};
+        if (!data) return E_INVALIDARG;
+        auto result = SHCreateShellItemArrayFromDataObject(data, IID_PPV_ARGS(&selection));
+        if (SUCCEEDED(result)) {
+            current = ReadSelection(selection.Get());
+            commands = CommandsFor(current, config);
+        }
+        return result;
     }
     IFACEMETHODIMP QueryContextMenu(HMENU menu, UINT index, UINT first, UINT last, UINT flags) override {
-        if ((flags & CMF_DEFAULTONLY) || last - first < static_cast<UINT>(kCommands) || !selection) return MAKE_HRESULT(SEVERITY_SUCCESS, 0, 0);
-        HMENU child = CreatePopupMenu();
-        if (!child) return E_FAIL;
-        AppendMenuW(child, MF_STRING, first, CompressTitle());
-        AppendMenuW(child, MF_STRING, first + 1, ConvertTitle());
-        AppendMenuW(child, MF_STRING, first + 2, FullTitle());
-        InsertMenuW(menu, index, MF_BYPOSITION | MF_POPUP, reinterpret_cast<UINT_PTR>(child), L"Convertii");
-        return MAKE_HRESULT(SEVERITY_SUCCESS, 0, kCommands);
+        if ((flags & CMF_DEFAULTONLY) || !selection || commands.empty()) return MAKE_HRESULT(SEVERITY_SUCCESS, 0, 0);
+        const auto space = static_cast<UINT>(commands.size());
+        if (last - first < space) return MAKE_HRESULT(SEVERITY_SUCCESS, 0, 0);
+        if (config.cascade) {
+            HMENU child = CreatePopupMenu();
+            if (!child) return E_FAIL;
+            for (size_t position = 0; position < commands.size(); ++position) {
+                auto id = first + static_cast<UINT>(position);
+                AppendMenuW(child, MF_STRING, id, TitleFor(commands[position]));
+                if (config.icons && static_cast<int>(position) < 24) {
+                    if (auto bitmap = MenuIcon(16)) SetMenuItemBitmaps(child, id, MF_BYCOMMAND, bitmap, bitmap);
+                }
+            }
+            InsertMenuW(menu, index, MF_BYPOSITION | MF_POPUP, reinterpret_cast<UINT_PTR>(child), L"Convertii");
+            if (config.icons) {
+                if (auto bitmap = MenuIcon(16)) {
+                    for (UINT position = 0; position < static_cast<UINT>(GetMenuItemCount(menu)); ++position) {
+                        wchar_t text[64]{};
+                        GetMenuStringW(menu, position, text, ARRAYSIZE(text), MF_BYPOSITION);
+                        if (wcscmp(text, L"Convertii") == 0) { SetMenuItemBitmaps(menu, position, MF_BYPOSITION, bitmap, bitmap); break; }
+                    }
+                }
+            }
+        } else {
+            // Flat layout: the entries sit directly in the Explorer menu, the
+            // way the classic 7-Zip menu inserts its own items.
+            for (size_t position = 0; position < commands.size(); ++position) {
+                auto id = first + static_cast<UINT>(position);
+                InsertMenuW(menu, index + static_cast<UINT>(position), MF_BYPOSITION | MF_STRING, id, TitleFor(commands[position]));
+                if (config.icons) {
+                    if (auto bitmap = MenuIcon(16)) SetMenuItemBitmaps(menu, id, MF_BYCOMMAND, bitmap, bitmap);
+                }
+            }
+        }
+        return MAKE_HRESULT(SEVERITY_SUCCESS, 0, space);
     }
     IFACEMETHODIMP InvokeCommand(CMINVOKECOMMANDINFO* info) override {
-        if (HIWORD(info->lpVerb)) return E_INVALIDARG;
-        auto command = LOWORD(info->lpVerb);
-        return command < static_cast<UINT>(kCommands) ? Launch(selection.Get(), command == 1, command != 2) : E_INVALIDARG;
+        if (!info || HIWORD(info->lpVerb)) return E_INVALIDARG;
+        auto offset = LOWORD(info->lpVerb);
+        if (offset >= static_cast<UINT>(commands.size())) return E_INVALIDARG;
+        return Launch(current, commands[offset]);
     }
     IFACEMETHODIMP GetCommandString(UINT_PTR, UINT, UINT*, LPSTR, UINT) override { return E_NOTIMPL; }
 };

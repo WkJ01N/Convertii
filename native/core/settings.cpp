@@ -24,6 +24,11 @@ Settings load_settings(const fs::path& root) {
    if (j.value("schema", 0) >= 2) {
     settings.chinese = j.value("language", "en-US") == "zh-CN"; settings.modern_menu = j.value("modern_menu", true);
     settings.presets = j.value("presets", "10,20,50,100"); settings.options = from_json_options(j.value("options", Json::object()));
+    if (j.contains("shell") && j["shell"].is_object()) {
+     const auto& s = j["shell"]; settings.shell.cascade = s.value("cascade", true); settings.shell.icons = s.value("icons", true);
+     settings.shell.media_only = s.value("media_only", true); settings.shell.folders = s.value("folders", true);
+     settings.shell.compress = s.value("compress", true); settings.shell.convert = s.value("convert", true); settings.shell.full = s.value("full", true);
+    }
     if (j.contains("window") && j["window"].is_object()) {
      const auto& w = j["window"]; settings.placement.x = w.value("x", 0); settings.placement.y = w.value("y", 0);
      settings.placement.width = w.value("width", 0); settings.placement.height = w.value("height", 0);
@@ -42,6 +47,7 @@ Settings load_settings(const fs::path& root) {
 }
 void save_settings(const Settings& settings, const fs::path& root) {
  auto placement = Json{{"x",settings.placement.x},{"y",settings.placement.y},{"width",settings.placement.width},{"height",settings.placement.height},{"maximized",settings.placement.maximized},{"tab",settings.placement.tab}};
- atomic_write(root / L"settings.json", Json{{"schema",3},{"language",settings.chinese ? "zh-CN" : "en-US"},{"modern_menu",settings.modern_menu},{"presets",settings.presets},{"options",to_json_options(settings.options)},{"window",placement}}.dump(2));
+ auto shell = Json{{"cascade",settings.shell.cascade},{"icons",settings.shell.icons},{"media_only",settings.shell.media_only},{"folders",settings.shell.folders},{"compress",settings.shell.compress},{"convert",settings.shell.convert},{"full",settings.shell.full}};
+ atomic_write(root / L"settings.json", Json{{"schema",3},{"language",settings.chinese ? "zh-CN" : "en-US"},{"modern_menu",settings.modern_menu},{"presets",settings.presets},{"options",to_json_options(settings.options)},{"window",placement},{"shell",shell}}.dump(2));
 }
 }

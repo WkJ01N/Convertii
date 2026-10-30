@@ -65,7 +65,13 @@ Options from_json_options(const Json& json);
 // The window remembers its own geometry and the page it was last showing so a
 // restart lands where the user left off; zero means "never saved".
 struct Placement { int x = 0, y = 0, width = 0, height = 0; bool maximized = false; int tab = 0; };
-struct Settings { int schema = 3; bool chinese = false, modern_menu = true; std::string presets = "10,20,50,100"; Options options; Placement placement; };
+// What the Explorer context menu shows. The shell extension reads the same
+// settings.json, so these flags only have to be written, never duplicated.
+struct ShellMenu {
+ bool cascade = true, icons = true, media_only = true, folders = true;
+ bool compress = true, convert = true, full = true;
+};
+struct Settings { int schema = 3; bool chinese = false, modern_menu = true; std::string presets = "10,20,50,100"; Options options; Placement placement; ShellMenu shell; };
 Settings load_settings(const fs::path& root = data_root());
 void save_settings(const Settings& settings, const fs::path& root = data_root());
 // Timeline adjustment is shared by subtitle extraction, muxing and burn-in.
