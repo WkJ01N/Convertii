@@ -8,7 +8,7 @@
 #include <map>
 
 namespace cvt {
-struct Launch { std::vector<fs::path> files; std::optional<Action> action; };
+struct Launch { std::vector<fs::path> files; std::optional<Action> action; bool quick = false; };
 Launch parse_launch(const std::vector<std::wstring>& args);
 class Broker {
  Handle mutex_; std::thread listener_; std::atomic_bool stop_{false}; std::wstring pipe_; HWND window_ = nullptr;
@@ -27,7 +27,7 @@ class Window {
  HWND pages_[6]{}; std::vector<Control> page_controls_[6]; int scroll_[6]{}, scroll_x_[6]{}, max_scroll_[6]{};
  HFONT font_ = nullptr;
  int label_height_ = 16, label_offset_ = 0, list_width_ = 0;
- int dpi_ = 96, page_ = 0; RECT size_{0,0,0,0};
+ int dpi_ = 96, page_ = 0; RECT size_{0,0,0,0}; bool compact_ = false;
  std::map<int,HWND> controls_; std::map<int,std::wstring> labels_; std::map<int,int> widths_; std::vector<Job> jobs_; std::optional<Media> media_;
  Settings settings_; Engine engine_; Player player_;
  std::thread batch_, probe_worker_, preview_worker_, service_worker_; std::atomic_bool cancel_{false}, probe_cancel_{false}, preview_cancel_{false};
@@ -52,7 +52,9 @@ class Window {
  static LRESULT CALLBACK procedure(HWND,UINT,WPARAM,LPARAM); static LRESULT CALLBACK page_procedure(HWND,UINT,WPARAM,LPARAM,UINT_PTR,DWORD_PTR);
  static LRESULT CALLBACK focus_procedure(HWND,UINT,WPARAM,LPARAM,UINT_PTR,DWORD_PTR);
 public:
- Window(HINSTANCE instance,Settings settings); ~Window(); HWND open(int show); HWND hwnd() const { return window_; }
+ // A quick window drops the queue, the tool bar and the page tabs and shows only
+ // the conversion page, which is what a shell menu entry needs.
+ Window(HINSTANCE instance,Settings settings,bool quick = false); ~Window(); HWND open(int show); HWND hwnd() const { return window_; }
  void receive(const Launch& launch) { add_files(launch); }
 };
 }

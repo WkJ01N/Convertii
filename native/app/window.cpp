@@ -43,7 +43,7 @@ static void post(HWND window,std::unique_ptr<UiEvent> event) { if (PostMessageW(
 static std::wstring size_text(uint64_t bytes) { std::wostringstream out; out << std::fixed << std::setprecision(2) << bytes/1000000. << L" MB"; return out.str(); }
 static std::wstring decimal(double n) { std::wostringstream out; out.imbue(std::locale::classic()); out << std::setprecision(9) << n; return out.str(); }
 static double parse(const std::wstring& value) { std::wistringstream stream(value); stream.imbue(std::locale::classic()); double n; stream >> n; if (!stream || !std::isfinite(n)) throw Error("Invalid numeric setting."); stream >> std::ws; if (!stream.eof()) throw Error("Invalid numeric setting."); return n; }
-Window::Window(HINSTANCE instance,Settings settings) : instance_(instance),settings_(std::move(settings)),engine_(Engine::discover()) {}
+Window::Window(HINSTANCE instance,Settings settings,bool quick) : instance_(instance),settings_(std::move(settings)),compact_(quick),engine_(Engine::discover()) {}
 Window::~Window() { shutdown(); if (font_) DeleteObject(font_); }
 HWND Window::control(int id) const { auto it = controls_.find(id); return it == controls_.end() ? nullptr : it->second; }
 int Window::px(int n) const { return MulDiv(n,dpi_,96); }
@@ -110,17 +110,18 @@ HWND Window::open(int show) {
  if (!cls.hIconSm) cls.hIconSm = LoadIconW(nullptr,IDI_APPLICATION);
  RegisterClassExW(&cls);
  dpi_ = static_cast<int>(GetDpiForSystem()); RECT work; SystemParametersInfoW(SPI_GETWORKAREA,0,&work,0);
- int width = std::min(px(1100),static_cast<int>(work.right-work.left)), height = std::min(px(860),static_cast<int>(work.bottom-work.top));
+ int width = std::min(compact_ ? px(660) : px(1100),static_cast<int>(work.right-work.left));
+ int height = std::min(compact_ ? px(560) : px(860),static_cast<int>(work.bottom-work.top));
  int x = CW_USEDEFAULT, y = CW_USEDEFAULT;
  // A saved geometry is only reused while it still fits on a monitor, so a
  // window parked on a disconnected display comes back at the default size.
- const auto& saved = settings_.placement;
+ const auto& saved = compact_ ? Placement{} : settings_.placement;
  if (saved.width >= px(760) && saved.height >= px(560) && saved.x + saved.width > work.left + px(80) && saved.y + saved.height > work.top + px(80)) {
   x = std::max(static_cast<int>(work.left),std::min(saved.x,static_cast<int>(work.right) - px(160)));
   y = std::max(static_cast<int>(work.top),std::min(saved.y,static_cast<int>(work.bottom) - px(120)));
   width = std::min(saved.width,static_cast<int>(work.right-work.left)); height = std::min(saved.height,static_cast<int>(work.bottom-work.top));
  }
- auto window = CreateWindowExW(WS_EX_CONTROLPARENT,cls.lpszClassName,L"Convertii",WS_OVERLAPPEDWINDOW,x,y,width,height,nullptr,nullptr,instance_,this); if (!window) throw Error(win_error());
+ auto window = CreateWindowExW(WS_EX_CONTROLPARENT,cls.lpszClassName,compact_ ? (settings_.chinese ? L"Convertii - 快速处理" : L"Convertii - Quick job") : L"Convertii",WS_OVERLAPPEDWINDOW,x,y,width,height,nullptr,nullptr,instance_,this); if (!window) throw Error(win_error());
  if (saved.maximized) show = SW_SHOWMAXIMIZED;
  ShowWindow(window,show); UpdateWindow(window);
  // The tab control exists once WM_CREATE has run build(); restore the page now.
@@ -192,19 +193,25 @@ void Window::build() {
 
 void Window::layout() {
  RECT client{0,0,0,0}; GetClientRect(window_,&client); if (size_.right>0) client = size_; int w = MulDiv(client.right,96,dpi_), h = MulDiv(client.bottom,96,dpi_);
- int x = kMargin; for (int id : {Add,Remove,Clear,Edit,Reset,Open}) { int width = widths_[id]; MoveWindow(control(id),px(x),px(kToolbarTop),px(width),px(kToolbarHeight),TRUE); x += width+kButtonGap; }
- int settings_width = widths_[SettingsButton]; MoveWindow(control(SettingsButton),px(w-kMargin-settings_width),px(kToolbarTop),px(settings_width),px(kToolbarHeight),TRUE);
  int list_width = std::max(160,w-2*kMargin);
- MoveWindow(list_,px(kMargin),px(kListTop),px(list_width),px(kListHeight),TRUE);
- RECT area; GetClientRect(list_,&area); int inner = MulDiv(area.right,96,dpi_);
- const int shares[] = {40,12,12,20,16}; for (int i=0;i<5;++i) ListView_SetColumnWidth(list_,i,px(inner*shares[i]/100));
  int bottom = h-kBottomBar, output_top = bottom-kButtonGap-kOutputHeight, progress_top = output_top-9, page_bottom = progress_top-6;
-
- int tabs_height = std::max(140,page_bottom-kTabsTop);
- MoveWindow(tabs_,px(kMargin),px(kTabsTop),px(list_width),px(tabs_height),TRUE);
- RECT display{0,0,px(list_width),px(tabs_height)}; TabCtrl_AdjustRect(tabs_,FALSE,&display);
- int page_width = std::max(px(160),static_cast<int>(display.right-display.left)), page_height = std::max(px(80),static_cast<int>(display.bottom-display.top));
- for (int i=0;i<6;++i) { MoveWindow(pages_[i],px(kMargin)+display.left,px(kTabsTop)+display.top,page_width,page_height,TRUE); layout_page(i); }
+ if (compact_) {
+  // A quick window is one page: no queue, no tool bar and no page tabs.
+  for (int id : {Add,Remove,Clear,Edit,Reset,Open,SettingsButton}) ShowWindow(control(id),SW_HIDE);
+  ShowWindow(list_,SW_HIDE); ShowWindow(tabs_,SW_HIDE);
+  for (int i=0;i<6;++i) { MoveWindow(pages_[i],px(kMargin),px(kMargin),px(w-2*kMargin),px(std::max(80,page_bottom-kMargin)),TRUE); layout_page(i); }
+ } else {
+  int x = kMargin; for (int id : {Add,Remove,Clear,Edit,Reset,Open}) { int width = widths_[id]; MoveWindow(control(id),px(x),px(kToolbarTop),px(width),px(kToolbarHeight),TRUE); x += width+kButtonGap; }
+  int settings_width = widths_[SettingsButton]; MoveWindow(control(SettingsButton),px(w-kMargin-settings_width),px(kToolbarTop),px(settings_width),px(kToolbarHeight),TRUE);
+  MoveWindow(list_,px(kMargin),px(kListTop),px(list_width),px(kListHeight),TRUE);
+  RECT area; GetClientRect(list_,&area); int inner = MulDiv(area.right,96,dpi_);
+  const int shares[] = {40,12,12,20,16}; for (int i=0;i<5;++i) ListView_SetColumnWidth(list_,i,px(inner*shares[i]/100));
+  int tabs_height = std::max(140,page_bottom-kTabsTop);
+  MoveWindow(tabs_,px(kMargin),px(kTabsTop),px(list_width),px(tabs_height),TRUE);
+  RECT display{0,0,px(list_width),px(tabs_height)}; TabCtrl_AdjustRect(tabs_,FALSE,&display);
+  int page_width = std::max(px(160),static_cast<int>(display.right-display.left)), page_height = std::max(px(80),static_cast<int>(display.bottom-display.top));
+  for (int i=0;i<6;++i) { MoveWindow(pages_[i],px(kMargin)+display.left,px(kTabsTop)+display.top,page_width,page_height,TRUE); layout_page(i); }
+ }
  int browse_width = widths_[Browse];
  MoveWindow(output_,px(kMargin),px(output_top),px(std::max(160,list_width-browse_width-kButtonGap)),px(kOutputHeight),TRUE);
  MoveWindow(control(Browse),px(w-kMargin-browse_width),px(output_top),px(browse_width),px(kOutputHeight),TRUE);
@@ -213,8 +220,8 @@ void Window::layout() {
  int run_x = w-kMargin-run_width, cancel_x = run_x-kButtonGap-cancel_width, retry_x = cancel_x-kButtonGap-retry_width;
  MoveWindow(control(Run),px(run_x),px(button_y),px(run_width),px(kToolbarHeight),TRUE);
  MoveWindow(control(Cancel),px(cancel_x),px(button_y),px(cancel_width),px(kToolbarHeight),TRUE);
- MoveWindow(control(Retry),px(retry_x),px(button_y),px(retry_width),px(kToolbarHeight),TRUE);
- MoveWindow(status_,px(kMargin),px(bottom+10),px(std::max(80,retry_x-kMargin-kButtonGap)),px(kBottomBar-20),TRUE);
+ if (compact_) ShowWindow(control(Retry),SW_HIDE); else MoveWindow(control(Retry),px(retry_x),px(button_y),px(retry_width),px(kToolbarHeight),TRUE);
+ MoveWindow(status_,px(kMargin),px(bottom+10),px(std::max(80,(compact_ ? run_x : retry_x)-kMargin-kButtonGap)),px(kBottomBar-20),TRUE);
  player_.resize();
 }
 
