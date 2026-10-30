@@ -1,5 +1,7 @@
 #include <windows.h>
 1 RT_MANIFEST "@CMAKE_BINARY_DIR@/app.manifest"
+// ID 1 of type RT_GROUP_ICON is what Window::open loads for the class icon.
+1 ICON "@CONVERTII_ICON_RC@"
 VS_VERSION_INFO VERSIONINFO
  FILEVERSION 0,2,0,0
  PRODUCTVERSION 0,2,0,0

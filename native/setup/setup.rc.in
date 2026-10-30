@@ -1,4 +1,5 @@
 #include <windows.h>
 1 RT_MANIFEST "@CMAKE_SOURCE_DIR@/native/setup/setup.manifest"
+1 ICON "@CONVERTII_ICON_RC@"
 101 RCDATA "@CONVERTII_RELEASE_CONFIG_RC@"
 @PAYLOAD_RESOURCE@

@@ -102,7 +102,13 @@ void Window::button(int page,int id,const wchar_t* label,int col,int row,int spa
 }
 HWND Window::open(int show) {
  WNDCLASSEXW page_class{sizeof(page_class)}; page_class.lpfnWndProc = DefWindowProcW; page_class.hInstance = instance_; page_class.hCursor = LoadCursorW(nullptr,IDC_ARROW); page_class.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_BTNFACE+1); page_class.lpszClassName = L"ConvertiiPage"; RegisterClassExW(&page_class);
- WNDCLASSEXW cls{sizeof(cls)}; cls.lpfnWndProc = procedure; cls.hInstance = instance_; cls.hCursor = LoadCursorW(nullptr,IDC_ARROW); cls.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_BTNFACE+1); cls.lpszClassName = L"ConvertiiNativeWindow"; cls.hIcon = LoadIconW(nullptr,IDI_APPLICATION); RegisterClassExW(&cls);
+ WNDCLASSEXW cls{sizeof(cls)}; cls.lpfnWndProc = procedure; cls.hInstance = instance_; cls.hCursor = LoadCursorW(nullptr,IDC_ARROW); cls.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_BTNFACE+1); cls.lpszClassName = L"ConvertiiNativeWindow";
+ // Resource 1 of type RT_GROUP_ICON is packed from native/app/Convertii.ico.
+ // UiTests links no .rc at all, so the generic icon is the fallback there.
+ cls.hIcon = LoadIconW(instance_,MAKEINTRESOURCEW(1)); if (!cls.hIcon) cls.hIcon = LoadIconW(nullptr,IDI_APPLICATION);
+ cls.hIconSm = static_cast<HICON>(LoadImageW(instance_,MAKEINTRESOURCEW(1),IMAGE_ICON,GetSystemMetrics(SM_CXSMICON),GetSystemMetrics(SM_CYSMICON),LR_DEFAULTCOLOR));
+ if (!cls.hIconSm) cls.hIconSm = LoadIconW(nullptr,IDI_APPLICATION);
+ RegisterClassExW(&cls);
  dpi_ = static_cast<int>(GetDpiForSystem()); RECT work; SystemParametersInfoW(SPI_GETWORKAREA,0,&work,0); int width = std::min(px(1100),static_cast<int>(work.right-work.left)), height = std::min(px(860),static_cast<int>(work.bottom-work.top));
  auto window = CreateWindowExW(WS_EX_CONTROLPARENT,cls.lpszClassName,L"Convertii",WS_OVERLAPPEDWINDOW,CW_USEDEFAULT,CW_USEDEFAULT,width,height,nullptr,nullptr,instance_,this); if (!window) throw Error(win_error());
  ShowWindow(window,show); UpdateWindow(window); return window;
